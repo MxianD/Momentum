@@ -1,0 +1,50 @@
+// src/models/ForumPost.js
+import mongoose from "mongoose";
+
+const ForumPostSchema = new mongoose.Schema(
+  {
+    title: { type: String, required: true },
+    content: { type: String, required: true },
+    hasMedia: { type: Boolean, default: false },
+
+    // 来源：普通发帖 / check-in
+    source: {
+      type: String,
+      enum: ["manual", "checkin"],
+      default: "manual",
+    },
+
+    // 发帖人
+    author: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+
+    // 关联的 challenge（如果这是某个挑战的 check-in）
+    challenge: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Challenge",
+      default: null,
+    },
+
+    // 点赞 / 点踩 / 收藏 （按用户）
+    upvotedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    downvotedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    bookmarkedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+  },
+  { timestamps: true }
+);
+
+ForumPostSchema.virtual("upvotes").get(function () {
+  return this.upvotedBy?.length || 0;
+});
+ForumPostSchema.virtual("downvotes").get(function () {
+  return this.downvotedBy?.length || 0;
+});
+ForumPostSchema.virtual("bookmarks").get(function () {
+  return this.bookmarkedBy?.length || 0;
+});
+
+ForumPostSchema.set("toJSON", { virtuals: true });
+ForumPostSchema.set("toObject", { virtuals: true });
+
+const ForumPost = mongoose.model("ForumPost", ForumPostSchema);
+
+export default ForumPost;
