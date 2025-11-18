@@ -3,61 +3,65 @@ import React, { useState } from "react";
 import {
   Box,
   Paper,
-  Typography,
   TextField,
   Button,
-  Stack,
+  Typography,
+  CircularProgress,
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
 
-
-function LoginPage({ onLogin }) {
+function LoginPage() {
   const [name, setName] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const trimmed = name.trim();
-    if (!trimmed || submitting) return;
+
+    if (!name.trim()) {
+      setError("Please enter your name.");
+      return;
+    }
+
+    // 如果环境变量没生效，先给出明显提示，避免你一直懵
+    if (!import.meta.env.VITE_API_BASE_URL) {
+      console.warn("VITE_API_BASE_URL is not set, using localhost fallback");
+    }
+
+    setError("");
+    setLoading(true);
 
     try {
-      setSubmitting(true);
-
-      // 调后端 /api/users/login
       const res = await fetch(`${API_BASE_URL}/users/login`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ name: trimmed }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim() }),
       });
 
       if (!res.ok) {
-        console.error("Login request failed:", res.status);
-        alert("Login failed. Please try again.");
-        setSubmitting(false);
-        return;
+        // 后端返回非 2xx，比如 500 / 404
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.error || `Login failed (${res.status})`);
       }
 
-      const user = await res.json(); // { _id, name }
+      const user = await res.json();
 
-      // 存进 localStorage
+      // 存到 localStorage，后面 HomePage / ForumPage 会用到
       localStorage.setItem("momentumUser", JSON.stringify(user));
 
-      // 通知 App
-      if (onLogin) onLogin(user);
-
-      // 跳到首页
-      navigate("/", { replace: true });
+      // 跳转到首页
+      navigate("/home");
     } catch (err) {
       console.error("Login error:", err);
-      alert("Network error. Please try again.");
+      setError(
+        "Unable to login. Please check your network and server configuration."
+      );
     } finally {
-      setSubmitting(false);
+      setLoading(false);
     }
   };
 
@@ -65,73 +69,81 @@ function LoginPage({ onLogin }) {
     <Box
       sx={{
         minHeight: "100vh",
-        bgcolor: "#516E1F",
+        bgcolor: "#F5F5F5",
         display: "flex",
-        justifyContent: "center",
         alignItems: "center",
+        justifyContent: "center",
         px: 2,
       }}
     >
       <Paper
-        elevation={6}
+        elevation={3}
         sx={{
-          width: "100%",
           maxWidth: 360,
-          borderRadius: 4,
+          width: "100%",
           p: 3,
-          bgcolor: "#F9FAFB",
+          borderRadius: 4,
         }}
       >
         <Typography
           variant="h5"
-          sx={{ fontWeight: 700, mb: 1, color: "#111827" }}
+          sx={{ fontWeight: 700, mb: 1.5, textAlign: "center" }}
         >
           Welcome to Momentum
         </Typography>
-
         <Typography
           variant="body2"
-          sx={{ mb: 3, color: "#6B7280" }}
+          sx={{ mb: 2, textAlign: "center", color: "#6B7280" }}
         >
-          Before we start, how should we call you?
+          Enter your name to start tracking your challenges.
         </Typography>
 
-        <Box component="form" onSubmit={handleSubmit}>
-          <Stack spacing={2}>
-            <TextField
-              label="Your name"
-              variant="outlined"
-              size="small"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              autoFocus
-            />
+        <form onSubmit={handleSubmit}>
+          <TextField
+            fullWidth
+            label="Your name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            sx={{ mb: 2 }}
+          />
 
-            <Button
-              type="submit"
-              variant="contained"
-              disabled={!name.trim() || submitting}
-              sx={{
-                textTransform: "none",
-                fontWeight: 600,
-                borderRadius: 999,
-                py: 1,
-                bgcolor: "#111827",
-                "&:hover": { bgcolor: "#020617" },
-              }}
-            >
-              {submitting ? "Logging in..." : "Continue"}
-            </Button>
-
+          {error && (
             <Typography
               variant="caption"
-              sx={{ color: "#9CA3AF" }}
+              sx={{ color: "red", display: "block", mb: 1 }}
             >
-              No password needed. Your name will be stored and used
-              across the app.
+              {error}
             </Typography>
-          </Stack>
-        </Box>
+          )}
+
+          <Button
+            type="submit"
+            fullWidth
+            variant="contained"
+            disabled={loading}
+            sx={{
+              textTransform: "none",
+              fontWeight: 600,
+              borderRadius: 999,
+            }}
+          >
+            {loading ? (
+              <>
+                <CircularProgress size={18} sx={{ mr: 1 }} />
+                Logging in...
+              </>
+            ) : (
+              "Login"
+            )}
+          </Button>
+        </form>
+
+        <Typography
+          variant="caption"
+          sx={{ mt: 2, display: "block", textAlign: "center", color: "#9CA3AF" }}
+        >
+          API: {API_BASE_URL}
+        </Typography>
       </Paper>
     </Box>
   );
