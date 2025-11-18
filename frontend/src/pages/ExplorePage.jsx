@@ -19,11 +19,12 @@ import meditationImg from "../assets/challenges/meditation.svg";
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
 
-
-// 推荐挑战（走马灯，系统默认，可先写死在前端）
+// 推荐挑战（走马灯，系统默认，先写死在前端）
+// ⚠️ 如果以后你在数据库里给这几个挑战建了真实 _id，可以在这里补上 _id 字段，
+//   这样就能和 friend challenge 一样真正写入用户加入记录。
 const recommended = [
   {
-    id: "rec-1",
+    _id: "691beb60bcfe398e75f30542",
     title: "Everyday Meditation",
     leader: "Challenge Leader",
     time: "10 Min / day",
@@ -32,7 +33,7 @@ const recommended = [
     image: meditationImg,
   },
   {
-    id: "rec-2",
+    id: "691beb74bcfe398e75f30544",
     title: "Stay Hydrated",
     leader: "Challenge Leader",
     time: "Daily",
@@ -41,7 +42,7 @@ const recommended = [
     image: meditationImg,
   },
   {
-    id: "rec-3",
+    id: "691beb94bcfe398e75f30548",
     title: "Morning Stretch",
     leader: "Challenge Leader",
     time: "5 Min / day",
@@ -53,7 +54,10 @@ const recommended = [
 
 function ExplorePage() {
   const [currentIndex, setCurrentIndex] = useState(0);
+
+  // ✅ 用这个 state 存当前弹窗里展示的 challenge
   const [selectedChallenge, setSelectedChallenge] = useState(null);
+
   const [loading, setLoading] = useState(true);
   const [friendChallenges, setFriendChallenges] = useState([]);
   const [joinedChallengeIds, setJoinedChallengeIds] = useState([]);
@@ -106,6 +110,7 @@ function ExplorePage() {
     loadData();
   }, [userId]);
 
+  // 打开走马灯弹窗
   const handleOpenDetail = (challenge) => {
     setSelectedChallenge(challenge);
   };
@@ -116,6 +121,7 @@ function ExplorePage() {
 
   const isJoined = (challengeId) => joinedChallengeIds.includes(challengeId);
 
+  // 好友 challenge 的加入（已连后端）
   const handleJoinFriendChallenge = async (challenge) => {
     if (!userId) {
       alert("Please login first.");
@@ -143,6 +149,29 @@ function ExplorePage() {
     } catch (err) {
       console.error("Error joining challenge:", err);
     }
+  };
+
+  // 🔥 推荐（走马灯） challenge 的加入逻辑
+  // 现在这 3 个是“系统默认模板”，前端写死，没有 _id。
+  // 如果以后你在数据库里给它们建了真实 challenge（有 _id），
+  // 可以在 recommended 里补上 _id，这里就可以直接走和 friend 一样的接口。
+  const handleJoinRecommendedChallenge = async (challenge) => {
+    if (!userId) {
+      alert("Please login first.");
+      return;
+    }
+
+    // 目前前端模板 challenge 没有 _id，不知道该向哪条数据库记录写入。
+    // 为了不骗你，这里先给出提示。
+    if (!challenge._id) {
+      alert(
+        "当前这几个 Recommended 挑战还只是前端模板。\n如果想把它们真正写入数据库并在 Home 里显示，需要先在后端为它们建对应的 challenge 记录，再把 _id 填到前端 recommended 里。"
+      );
+      return;
+    }
+
+    // 如果你已经给这些 recommended 配了 _id，就可以直接复用 friend 的逻辑：
+    await handleJoinFriendChallenge(challenge);
   };
 
   return (
@@ -240,7 +269,6 @@ function ExplorePage() {
                     src={item.image}
                     alt={item.title}
                     sx={{
-                      // 宽度按卡片宽度的百分比来算，屏幕变宽/变窄时自动变化
                       width: { xs: "38%", sm: "32%", md: "28%" },
                       height: "auto",
                       borderRadius: 3,
@@ -288,7 +316,10 @@ function ExplorePage() {
         </Box>
 
         {/* Friend challenges 区块 */}
-        <Typography variant="h6" sx={{ fontWeight: 700, fontSize: 20, mb: 2 }}>
+        <Typography
+          variant="h6"
+          sx={{ fontWeight: 700, fontSize: 20, mb: 2 }}
+        >
           Challenges From Your Friends:
         </Typography>
 
@@ -373,7 +404,6 @@ function ExplorePage() {
                     </Stack>
 
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      {/* 先简单写个固定 streak 展示，streak 真值在 Home 用 UserChallenge */}
                       5 ⚡
                     </Typography>
                   </Stack>
@@ -414,19 +444,58 @@ function ExplorePage() {
         fullWidth
         maxWidth="sm"
       >
-        <DialogTitle>{selectedChallenge?.title || "Challenge"}</DialogTitle>
+        {/* 标题 */}
+        <DialogTitle sx={{ fontWeight: 700 }}>
+          {selectedChallenge?.title}
+        </DialogTitle>
+
+        {/* 内容 */}
         <DialogContent dividers>
-          <Typography variant="body2" sx={{ mb: 2, color: "#6B7280" }}>
+          <Typography sx={{ mb: 1.5, color: "#6B7280" }}>
+            {selectedChallenge?.time}
+          </Typography>
+          <Typography sx={{ mb: 2 }}>
             {selectedChallenge?.description}
           </Typography>
-          {selectedChallenge && (
-            <Typography variant="body2">
-              Time: <strong>{selectedChallenge.time}</strong>
-            </Typography>
+
+          {selectedChallenge?.image && (
+            <Box
+              component="img"
+              src={selectedChallenge.image}
+              alt={selectedChallenge.title}
+              sx={{
+                width: "100%",
+                borderRadius: 3,
+                mb: 2,
+                objectFit: "cover",
+              }}
+            />
           )}
         </DialogContent>
-        <DialogActions>
+
+        {/* 弹窗底部按钮 */}
+        <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={handleCloseDetail}>Close</Button>
+
+          <Button
+            variant="contained"
+            sx={{ textTransform: "none", borderRadius: 999 }}
+            onClick={() => {
+              if (!selectedChallenge) return;
+
+              // 推荐 challenge（走马灯那 3 个）
+              if (!selectedChallenge._id) {
+                handleJoinRecommendedChallenge(selectedChallenge);
+              } else {
+                // 理论上不会走到这里，但如果你以后把 friends 也复用这个弹窗，可以走 friend 加入逻辑
+                handleJoinFriendChallenge(selectedChallenge);
+              }
+
+              handleCloseDetail();
+            }}
+          >
+            Join challenge
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>
