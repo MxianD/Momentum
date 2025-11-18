@@ -12,20 +12,43 @@ import ThumbUpOffAltIcon from "@mui/icons-material/ThumbUpOffAlt";
 import ThumbDownOffAltIcon from "@mui/icons-material/ThumbDownOffAlt";
 import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";
 import BookmarkIcon from "@mui/icons-material/Bookmark";
-import PersonOutlineIcon from "@mui/icons-material/PersonOutline";
+
+function AvatarGroupMini() {
+  return (
+    <Stack direction="row" spacing={-0.8}>
+      {[0, 1, 2].map((i) => (
+        <Avatar
+          key={i}
+          sx={{
+            width: 20,
+            height: 20,
+            border: "2px solid #FFFFFF",
+            bgcolor: "#111827",
+          }}
+        />
+      ))}
+    </Stack>
+  );
+}
 
 export default function ForumPostCard({
   title,
   content,
   hasMedia = false,
-  authorName,          // 新增：作者名字
-  likesCount = 0,      // 新增：点赞数量
+
+  // 新增：作者名字 & 点赞数
+  authorName = "Anonymous",
+  upvotesCount = 0,
+
+  // 交互状态
   upvoted = false,
   downvoted = false,
   bookmarked = false,
-  onLike,
-  onDislike,
-  onToggleFavorite,
+
+  // 回调
+  onUpvote,
+  onDownvote,
+  onToggleBookmark,
   onCardClick,
 }) {
   return (
@@ -37,16 +60,17 @@ export default function ForumPostCard({
         p: 1.6,
         mb: 1.4,
       }}
-      onClick={onCardClick}
     >
-      {/* 标题 + 右上 作者 / 点赞数 */}
+      {/* 标题 + 右上作者 & 点赞信息 */}
       <Box
         sx={{
           display: "flex",
           justifyContent: "space-between",
           alignItems: "flex-start",
           mb: 1,
+          cursor: onCardClick ? "pointer" : "default",
         }}
+        onClick={onCardClick}
       >
         <Typography
           variant="subtitle1"
@@ -55,27 +79,14 @@ export default function ForumPostCard({
           {title}
         </Typography>
 
-        {/* 右上区域：作者 + 点赞数 */}
-        <Stack spacing={0.2} alignItems="flex-end">
-          <Stack direction="row" spacing={0.5} alignItems="center">
-            <PersonOutlineIcon sx={{ fontSize: 16, color: "#111827" }} />
-            <Typography
-              variant="caption"
-              sx={{ color: "#111827", fontWeight: 500 }}
-            >
-              {authorName || "Anonymous"}
-            </Typography>
-          </Stack>
-
-          <Stack direction="row" spacing={0.4} alignItems="center">
-            <ThumbUpOffAltIcon sx={{ fontSize: 14, color: "#4B5563" }} />
-            <Typography
-              variant="caption"
-              sx={{ color: "#4B5563", fontWeight: 500 }}
-            >
-              {likesCount}
-            </Typography>
-          </Stack>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Typography
+            variant="caption"
+            sx={{ color: "#4B5563", whiteSpace: "nowrap" }}
+          >
+            {authorName} · {upvotesCount} likes
+          </Typography>
+          <AvatarGroupMini />
         </Stack>
       </Box>
 
@@ -87,7 +98,7 @@ export default function ForumPostCard({
         {content}
       </Typography>
 
-      {/* 图片占位区域（仅部分帖子有） */}
+      {/* 图片占位区域（仅 hasMedia 时显示） */}
       {hasMedia && (
         <Box
           sx={{
@@ -118,10 +129,8 @@ export default function ForumPostCard({
           justifyContent: "space-between",
           mt: 0.5,
         }}
-        // 阻止点击按钮时触发整卡 onCardClick
-        onClick={(e) => e.stopPropagation()}
       >
-        {/* 左侧：黑色 pill，里面两个图标（赞 / 踩） */}
+        {/* 左侧：黑色 pill，里面两个图标 */}
         <Box
           sx={{
             display: "inline-flex",
@@ -134,9 +143,12 @@ export default function ForumPostCard({
         >
           <IconButton
             size="small"
-            onClick={onLike}
+            onClick={(e) => {
+              e.stopPropagation(); // 不触发卡片点击
+              onUpvote && onUpvote();
+            }}
             sx={{
-              color: upvoted ? "#FACC15" : "#FFFFFF",
+              color: upvoted ? "#A7F3D0" : "#FFFFFF",
               p: 0.4,
             }}
           >
@@ -153,9 +165,12 @@ export default function ForumPostCard({
 
           <IconButton
             size="small"
-            onClick={onDislike}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDownvote && onDownvote();
+            }}
             sx={{
-              color: downvoted ? "#F97316" : "#FFFFFF",
+              color: downvoted ? "#FCA5A5" : "#FFFFFF",
               p: 0.4,
             }}
           >
@@ -166,7 +181,10 @@ export default function ForumPostCard({
         {/* 右侧：收藏按钮 */}
         <IconButton
           size="small"
-          onClick={onToggleFavorite}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleBookmark && onToggleBookmark();
+          }}
           sx={{
             bgcolor: "#000000",
             color: "#FFFFFF",
