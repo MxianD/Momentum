@@ -7,6 +7,15 @@ const ForumPostSchema = new mongoose.Schema(
     content: { type: String, required: true },
     hasMedia: { type: Boolean, default: false },
     author: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    // ✅ 新增/确认：点赞计数
+    likesCount: { type: Number, default: 0 },
+
+    // 如果你有踩、收藏也可以加：
+    downvotesCount: { type: Number, default: 0 },
+    bookmarksCount: { type: Number, default: 0 },
+
+    source: { type: String },       // eg. "checkin"
+    challenge: { type: mongoose.Schema.Types.ObjectId, ref: "Challenge" },
     // 来源：普通发帖 / check-in
     source: {
       type: String,
