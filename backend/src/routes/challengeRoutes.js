@@ -127,5 +127,27 @@ router.post("/:id/checkin", async (req, res) => {
     res.status(500).json({ error: "Failed to check in" });
   }
 });
+router.post("/create", async (req, res) => {
+  try {
+    const { title, description, time, type } = req.body;
 
+    if (!title || !description || !time) {
+      return res
+        .status(400)
+        .json({ error: "title, description and time are required" });
+    }
+
+    const challenge = await Challenge.create({
+      title,
+      description,
+      time,
+      type: type || "recommended", // 默认标记为 recommended
+    });
+
+    res.json({ success: true, challenge });
+  } catch (err) {
+    console.error("Error creating challenge", err);
+    res.status(500).json({ error: "Failed to create challenge" });
+  }
+});
 export default router;
