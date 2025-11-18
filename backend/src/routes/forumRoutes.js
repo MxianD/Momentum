@@ -18,7 +18,7 @@ router.get("/posts", async (req, res) => {
       const obj = p.toObject();
       return {
         ...obj,
-        authorName: obj.author?.name || "匿名",
+        authorName: obj.author?.name || "Anonymous",
         upvotes: obj.upvotes ?? 0,
         downvotes: obj.downvotes ?? 0,
         bookmarks: obj.bookmarks ?? 0,
@@ -53,7 +53,7 @@ router.post("/posts/:id/upvote", async (req, res) => {
       success: true,
       post: {
         ...post.toObject(),
-        authorName: post.author?.name || "匿名",
+        authorName: post.author?.name || "Anonymous",
         upvotes: post.upvotes ?? 0,
         downvotes: post.downvotes ?? 0,
         bookmarks: post.bookmarks ?? 0,
@@ -85,7 +85,7 @@ router.post("/posts/:id/downvote", async (req, res) => {
       success: true,
       post: {
         ...post.toObject(),
-        authorName: post.author?.name || "匿名",
+        authorName: post.author?.name || "Anonymous",
         upvotes: post.upvotes ?? 0,
         downvotes: post.downvotes ?? 0,
         bookmarks: post.bookmarks ?? 0,
@@ -117,7 +117,7 @@ router.post("/posts/:id/bookmark", async (req, res) => {
       success: true,
       post: {
         ...post.toObject(),
-        authorName: post.author?.name || "匿名",
+        authorName: post.author?.name || "Anonymous",
         upvotes: post.upvotes ?? 0,
         downvotes: post.downvotes ?? 0,
         bookmarks: post.bookmarks ?? 0,
