@@ -21,7 +21,6 @@ import ForumPostCard from "../components/ForumPostCard.jsx";
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
 
-
 function ForumPage() {
   const [posts, setPosts] = useState([]);
   const [interactions, setInteractions] = useState({}); // { [id]: { upvoted, downvoted, bookmarked } }
@@ -246,10 +245,7 @@ function ForumPage() {
         )}
 
         {!loading && loadingError && (
-          <Typography
-            variant="body2"
-            sx={{ color: "#EF4444", mt: 2 }}
-          >
+          <Typography variant="body2" sx={{ color: "#EF4444", mt: 2 }}>
             {loadingError}
           </Typography>
         )}
@@ -262,36 +258,45 @@ function ForumPage() {
               downvoted: false,
               bookmarked: false,
             };
+
+            // 如果后端有 author.name 和 likes 数组，就用它们
+            const authorName = p.author?.name || p.authorName || "Anonymous";
+            const likesCount = Array.isArray(p.likes) ? p.likes.length : 0;
+
             return (
               <ForumPostCard
                 key={p._id}
                 title={p.title}
                 content={p.content}
                 hasMedia={p.hasMedia}
+                // ✅ 右上角：作者 & 点赞数
+                authorName={authorName}
+                likesCount={likesCount}
+                // 状态（如果你之后想在卡片里改样式，可以用）
                 upvoted={state.upvoted}
                 downvoted={state.downvoted}
                 bookmarked={state.bookmarked}
-                onUpvote={() => handleUpvote(p._id)}
-                onDownvote={() => handleDownvote(p._id)}
-                onToggleBookmark={() => handleToggleBookmark(p._id)}
+                // ✅ 交互回调，名字改成 onLike / onDislike / onToggleFavorite
+                onLike={() => handleUpvote(p._id)}
+                onDislike={() => handleDownvote(p._id)}
+                onToggleFavorite={() => handleToggleBookmark(p._id)}
+                // 点击整张卡片 -> 打开详情
                 onCardClick={() => handleCardClick(p)}
               />
             );
           })}
 
-        {!loading &&
-          !loadingError &&
-          filteredPosts.length === 0 && (
-            <Typography
-              variant="body2"
-              sx={{
-                color: "#6B7280",
-                mt: 2,
-              }}
-            >
-              No posts found. Try a different keyword.
-            </Typography>
-          )}
+        {!loading && !loadingError && filteredPosts.length === 0 && (
+          <Typography
+            variant="body2"
+            sx={{
+              color: "#6B7280",
+              mt: 2,
+            }}
+          >
+            No posts found. Try a different keyword.
+          </Typography>
+        )}
       </Box>
 
       <BottomNavBar />
@@ -303,9 +308,7 @@ function ForumPage() {
         fullWidth
         maxWidth="sm"
       >
-        <DialogTitle>
-          {selectedPost?.title || "Post"}
-        </DialogTitle>
+        <DialogTitle>{selectedPost?.title || "Post"}</DialogTitle>
         <DialogContent dividers>
           <Typography variant="body2" sx={{ color: "#4B5563" }}>
             {selectedPost?.content}
