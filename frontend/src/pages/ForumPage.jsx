@@ -27,6 +27,16 @@ function ForumPage() {
   const [selectedPost, setSelectedPost] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadingError, setLoadingError] = useState("");
+  // 判断某个 userId 是否在一个 ObjectId 数组中
+  const isUserInArray = (arr, userId) => {
+    if (!Array.isArray(arr)) return false;
+    return arr.some((u) => {
+      // 可能是 string，也可能是 {_id: "..."}
+      if (typeof u === "string") return u === userId;
+      if (u && typeof u === "object") return u._id === userId;
+      return false;
+    });
+  };
 
   // 当前用户（点赞只用于前端状态，不做防刷）
   const [currentUser, setCurrentUser] = useState(null);
@@ -82,101 +92,174 @@ function ForumPage() {
   };
 
   // 👍 点赞
-  const handleUpvote = async (id) => {
-    // 先更新前端交互状态（按钮样式）
-    setInteractions((prev) => {
-      const prevState = prev[id] || {
-        upvoted: false,
-        downvoted: false,
-        bookmarked: false,
-      };
-      return {
-        ...prev,
-        [id]: {
-          ...prevState,
-          upvoted: true,
-          downvoted: false,
-        },
-      };
+const handleUpvote = async (id) => {
+  if (!currentUser?._id) {
+    alert("请先登录再点赞");
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/forum/posts/${id}/upvote`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ userId: currentUser._id }),
     });
 
-    // 再发请求，让后端把 upvotes +1，并把最新帖子数据发回来
-    try {
-      const res = await fetch(`${API_BASE_URL}/forum/posts/${id}/upvote`, {
-        method: "POST",
-      });
-      if (!res.ok) throw new Error(`Upvote failed: ${res.status}`);
-      const data = await res.json();
-      if (data?.post) {
-        applyPostUpdate(data.post);
-      }
-    } catch (err) {
-      console.error("Failed to upvote:", err);
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || `Upvote failed: ${res.status}`);
     }
-  };
+
+    const updatedPost = data.post;
+    if (updatedPost) {
+      // 更新 posts 里的那条数据（点赞数、数组等）
+      applyPostUpdate(updatedPost);
+
+      // 根据后端返回的 upvotedBy / downvotedBy 来更新交互状态
+      setInteractions((prev) => {
+        const prevState = prev[id] || {
+          upvoted: false,
+          downvoted: false,
+          bookmarked: false,
+        };
+
+        const upvoted = isUserInArray(
+          updatedPost.upvotedBy,
+          currentUser._id
+        );
+        const downvoted = isUserInArray(
+          updatedPost.downvotedBy,
+          currentUser._id
+        );
+
+        return {
+          ...prev,
+          [id]: {
+            ...prevState,
+            upvoted,
+            downvoted,
+          },
+        };
+      });
+    }
+  } catch (err) {
+    console.error("Failed to upvote:", err);
+    alert(err.message || "Failed to upvote");
+  }
+};
 
   // 👎 点踩
-  const handleDownvote = async (id) => {
-    setInteractions((prev) => {
-      const prevState = prev[id] || {
-        upvoted: false,
-        downvoted: false,
-        bookmarked: false,
-      };
-      return {
-        ...prev,
-        [id]: {
-          ...prevState,
-          upvoted: false,
-          downvoted: true,
-        },
-      };
+const handleDownvote = async (id) => {
+  if (!currentUser?._id) {
+    alert("请先登录再点踩");
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/forum/posts/${id}/downvote`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ userId: currentUser._id }),
     });
 
-    try {
-      const res = await fetch(`${API_BASE_URL}/forum/posts/${id}/downvote`, {
-        method: "POST",
-      });
-      if (!res.ok) throw new Error(`Downvote failed: ${res.status}`);
-      const data = await res.json();
-      if (data?.post) {
-        applyPostUpdate(data.post);
-      }
-    } catch (err) {
-      console.error("Failed to downvote:", err);
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || `Downvote failed: ${res.status}`);
     }
-  };
+
+    const updatedPost = data.post;
+    if (updatedPost) {
+      applyPostUpdate(updatedPost);
+
+      setInteractions((prev) => {
+        const prevState = prev[id] || {
+          upvoted: false,
+          downvoted: false,
+          bookmarked: false,
+        };
+
+        const upvoted = isUserInArray(
+          updatedPost.upvotedBy,
+          currentUser._id
+        );
+        const downvoted = isUserInArray(
+          updatedPost.downvotedBy,
+          currentUser._id
+        );
+
+        return {
+          ...prev,
+          [id]: {
+            ...prevState,
+            upvoted,
+            downvoted,
+          },
+        };
+      });
+    }
+  } catch (err) {
+    console.error("Failed to downvote:", err);
+    alert(err.message || "Failed to downvote");
+  }
+};
+
 
   // ⭐ 收藏
-  const handleToggleBookmark = async (id) => {
-    setInteractions((prev) => {
-      const prevState = prev[id] || {
-        upvoted: false,
-        downvoted: false,
-        bookmarked: false,
-      };
-      return {
-        ...prev,
-        [id]: {
-          ...prevState,
-          bookmarked: !prevState.bookmarked,
-        },
-      };
+const handleToggleBookmark = async (id) => {
+  if (!currentUser?._id) {
+    alert("请先登录再收藏");
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/forum/posts/${id}/bookmark`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ userId: currentUser._id }),
     });
 
-    try {
-      const res = await fetch(`${API_BASE_URL}/forum/posts/${id}/bookmark`, {
-        method: "POST",
-      });
-      if (!res.ok) throw new Error(`Bookmark failed: ${res.status}`);
-      const data = await res.json();
-      if (data?.post) {
-        applyPostUpdate(data.post);
-      }
-    } catch (err) {
-      console.error("Failed to bookmark:", err);
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || `Bookmark failed: ${res.status}`);
     }
-  };
+
+    const updatedPost = data.post;
+    if (updatedPost) {
+      applyPostUpdate(updatedPost);
+
+      setInteractions((prev) => {
+        const prevState = prev[id] || {
+          upvoted: false,
+          downvoted: false,
+          bookmarked: false,
+        };
+
+        const bookmarked = isUserInArray(
+          updatedPost.bookmarkedBy,
+          currentUser._id
+        );
+
+        return {
+          ...prev,
+          [id]: {
+            ...prevState,
+            bookmarked,
+          },
+        };
+      });
+    }
+  } catch (err) {
+    console.error("Failed to bookmark:", err);
+    alert(err.message || "Failed to bookmark");
+  }
+};
+
 
   // 搜索过滤
   const filteredPosts = useMemo(() => {
@@ -184,8 +267,7 @@ function ForumPage() {
     const q = search.toLowerCase();
     return posts.filter(
       (p) =>
-        p.title.toLowerCase().includes(q) ||
-        p.content.toLowerCase().includes(q)
+        p.title.toLowerCase().includes(q) || p.content.toLowerCase().includes(q)
     );
   }, [posts, search]);
 
