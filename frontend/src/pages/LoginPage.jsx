@@ -27,7 +27,6 @@ function LoginPage() {
       return;
     }
 
-    // 如果环境变量没生效，先给出明显提示，避免你一直懵
     if (!import.meta.env.VITE_API_BASE_URL) {
       console.warn("VITE_API_BASE_URL is not set, using localhost fallback");
     }
@@ -42,23 +41,35 @@ function LoginPage() {
         body: JSON.stringify({ name: name.trim() }),
       });
 
+      const data = await res.json().catch(() => null);
+
       if (!res.ok) {
-        // 后端返回非 2xx，比如 500 / 404
-        const errBody = await res.json().catch(() => ({}));
-        throw new Error(errBody.error || `Login failed (${res.status})`);
+        const message =
+          (data && (data.error || data.message)) ||
+          `Login failed (${res.status})`;
+        throw new Error(message);
       }
 
-      const user = await res.json();
+      // 兼容两种后端返回格式：
+      // 1. { _id, name, ... }
+      // 2. { success: true, user: { _id, name, ... } }
+      const user = data?.user || data;
 
-      // 存到 localStorage，后面 HomePage / ForumPage 会用到
+      if (!user || !user._id) {
+        console.error("Unexpected login response:", data);
+        throw new Error("Invalid login response from server.");
+      }
+
+      // 存到 localStorage，后面 HomePage / ForumPage 用
       localStorage.setItem("momentumUser", JSON.stringify(user));
 
-      // 跳转到首页
-      navigate("/home");
+      // 🔥 关键：登录成功后跳转到 /home
+      navigate("/home", { replace: true });
     } catch (err) {
       console.error("Login error:", err);
       setError(
-        "Unable to login. Please check your network and server configuration."
+        err.message ||
+          "Unable to login. Please check your network and server configuration."
       );
     } finally {
       setLoading(false);
@@ -140,7 +151,12 @@ function LoginPage() {
 
         <Typography
           variant="caption"
-          sx={{ mt: 2, display: "block", textAlign: "center", color: "#9CA3AF" }}
+          sx={{
+            mt: 2,
+            display: "block",
+            textAlign: "center",
+            color: "#9CA3AF",
+          }}
         >
           API: {API_BASE_URL}
         </Typography>

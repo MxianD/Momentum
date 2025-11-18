@@ -117,6 +117,7 @@ function App() {
               element={<Navigate to="/" replace />}
             />
           </Routes>
+          <Route path="/home" element={<HomePage />} />
         </Router>
       </Box>
     </ThemeProvider>
