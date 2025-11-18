@@ -1,11 +1,6 @@
 // src/App.jsx
 import React, { useState, useEffect } from "react";
-import {
-  ThemeProvider,
-  createTheme,
-  CssBaseline,
-  Box,
-} from "@mui/material";
+import { ThemeProvider, createTheme, CssBaseline, Box } from "@mui/material";
 import {
   BrowserRouter as Router,
   Routes,
@@ -112,12 +107,9 @@ function App() {
             />
 
             {/* 兜底：未知路径都重定向到 / */}
-            <Route
-              path="*"
-              element={<Navigate to="/" replace />}
-            />
+            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="/home" element={<HomePage />} />
           </Routes>
-          <Route path="/home" element={<HomePage />} />
         </Router>
       </Box>
     </ThemeProvider>
