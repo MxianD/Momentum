@@ -12,50 +12,34 @@ import ThumbUpOffAltIcon from "@mui/icons-material/ThumbUpOffAlt";
 import ThumbDownOffAltIcon from "@mui/icons-material/ThumbDownOffAlt";
 import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";
 import BookmarkIcon from "@mui/icons-material/Bookmark";
-
-function AvatarGroupMini() {
-  return (
-    <Stack direction="row" spacing={-0.8}>
-      {[0, 1, 2].map((i) => (
-        <Avatar
-          key={i}
-          sx={{
-            width: 20,
-            height: 20,
-            border: "2px solid #FFFFFF",
-            bgcolor: "#111827",
-          }}
-        />
-      ))}
-    </Stack>
-  );
-}
+import PersonOutlineIcon from "@mui/icons-material/PersonOutline";
 
 export default function ForumPostCard({
   title,
   content,
   hasMedia = false,
+  authorName,          // 新增：作者名字
+  likesCount = 0,      // 新增：点赞数量
   upvoted = false,
   downvoted = false,
   bookmarked = false,
-  onUpvote,
-  onDownvote,
-  onToggleBookmark,
+  onLike,
+  onDislike,
+  onToggleFavorite,
   onCardClick,
 }) {
   return (
     <Paper
       elevation={0}
-      onClick={onCardClick}
       sx={{
-        borderRadius: 1,
+        borderRadius: 2,
         bgcolor: "#FFFFFF",
         p: 1.6,
         mb: 1.4,
-        cursor: "pointer",
       }}
+      onClick={onCardClick}
     >
-      {/* 标题 + 右上头像组 */}
+      {/* 标题 + 右上 作者 / 点赞数 */}
       <Box
         sx={{
           display: "flex",
@@ -70,7 +54,29 @@ export default function ForumPostCard({
         >
           {title}
         </Typography>
-        <AvatarGroupMini />
+
+        {/* 右上区域：作者 + 点赞数 */}
+        <Stack spacing={0.2} alignItems="flex-end">
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            <PersonOutlineIcon sx={{ fontSize: 16, color: "#111827" }} />
+            <Typography
+              variant="caption"
+              sx={{ color: "#111827", fontWeight: 500 }}
+            >
+              {authorName || "Anonymous"}
+            </Typography>
+          </Stack>
+
+          <Stack direction="row" spacing={0.4} alignItems="center">
+            <ThumbUpOffAltIcon sx={{ fontSize: 14, color: "#4B5563" }} />
+            <Typography
+              variant="caption"
+              sx={{ color: "#4B5563", fontWeight: 500 }}
+            >
+              {likesCount}
+            </Typography>
+          </Stack>
+        </Stack>
       </Box>
 
       {/* 文本内容 */}
@@ -112,8 +118,10 @@ export default function ForumPostCard({
           justifyContent: "space-between",
           mt: 0.5,
         }}
+        // 阻止点击按钮时触发整卡 onCardClick
+        onClick={(e) => e.stopPropagation()}
       >
-        {/* 左侧：黑色 pill，里面两个图标 */}
+        {/* 左侧：黑色 pill，里面两个图标（赞 / 踩） */}
         <Box
           sx={{
             display: "inline-flex",
@@ -126,12 +134,9 @@ export default function ForumPostCard({
         >
           <IconButton
             size="small"
-            onClick={(e) => {
-              e.stopPropagation();
-              onUpvote && onUpvote();
-            }}
+            onClick={onLike}
             sx={{
-              color: upvoted ? "#22C55E" : "#FFFFFF",
+              color: upvoted ? "#FACC15" : "#FFFFFF",
               p: 0.4,
             }}
           >
@@ -148,12 +153,9 @@ export default function ForumPostCard({
 
           <IconButton
             size="small"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDownvote && onDownvote();
-            }}
+            onClick={onDislike}
             sx={{
-              color: downvoted ? "#EF4444" : "#FFFFFF",
+              color: downvoted ? "#F97316" : "#FFFFFF",
               p: 0.4,
             }}
           >
@@ -164,10 +166,7 @@ export default function ForumPostCard({
         {/* 右侧：收藏按钮 */}
         <IconButton
           size="small"
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleBookmark && onToggleBookmark();
-          }}
+          onClick={onToggleFavorite}
           sx={{
             bgcolor: "#000000",
             color: "#FFFFFF",
