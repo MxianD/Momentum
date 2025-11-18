@@ -21,7 +21,9 @@ import FlashOnIcon from "@mui/icons-material/FlashOn";
 
 import BottomNavBar from "../components/BottomNavBar.jsx";
 
-const API_BASE_URL = "http://localhost:3001/api";
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
+
 
 const rankingData = [
   { rank: 13, value: 45, color: "#AEB7FF" },

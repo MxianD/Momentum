@@ -18,7 +18,9 @@ import BottomNavBar from "../components/BottomNavBar.jsx";
 import ForumPostCard from "../components/ForumPostCard.jsx";
 
 // 开发阶段后端地址，部署后可以抽到环境变量里
-const API_BASE_URL = "http://localhost:3001/api";
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
+
 
 function ForumPage() {
   const [posts, setPosts] = useState([]);

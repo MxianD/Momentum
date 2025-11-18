@@ -16,7 +16,9 @@ import {
 import BottomNavBar from "../components/BottomNavBar.jsx";
 import meditationImg from "../assets/challenges/meditation.svg";
 
-const API_BASE_URL = "http://localhost:3001/api";
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
+
 
 // 推荐挑战（走马灯，系统默认，可先写死在前端）
 const recommended = [
