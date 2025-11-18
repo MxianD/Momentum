@@ -20,32 +20,6 @@ import ForumPostCard from "../components/ForumPostCard.jsx";
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
 
-// 小工具：从帖子对象中“尽可能”找出作者名字
-function getAuthorName(post) {
-  if (post.author && typeof post.author === "object" && post.author.name) {
-    // 后端 populate 出来的 { _id, name }
-    return post.author.name;
-  }
-  if (typeof post.authorName === "string") return post.authorName;
-  if (post.user && post.user.name) return post.user.name;
-  if (typeof post.userName === "string") return post.userName;
-
-  // 如果 author 是一个字符串而且不是很短（大概率是 ObjectId），就不要展示
-  if (typeof post.author === "string" && post.author.length < 20) {
-    return post.author;
-  }
-
-  return "Anonymous";
-}
-
-// 小工具：从帖子对象中读点赞数量
-function getLikesCount(post) {
-  if (typeof post.likesCount === "number") return post.likesCount;
-  if (Array.isArray(post.likes)) return post.likes.length;
-  if (typeof post.upvotes === "number") return post.upvotes;
-  return 0;
-}
-
 function ForumPage() {
   const [posts, setPosts] = useState([]);
   const [interactions, setInteractions] = useState({});
@@ -54,31 +28,38 @@ function ForumPage() {
   const [loading, setLoading] = useState(true);
   const [loadingError, setLoadingError] = useState("");
 
+  // 当前用户（点赞只用于前端状态，不做防刷）
+  const [currentUser, setCurrentUser] = useState(null);
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("momentumUser");
+      if (saved) setCurrentUser(JSON.parse(saved));
+    } catch (e) {
+      console.error("Failed to parse user from localStorage", e);
+    }
+  }, []);
+
   // 加载帖子
   useEffect(() => {
     const fetchPosts = async () => {
       try {
         setLoading(true);
         setLoadingError("");
-
         const res = await fetch(`${API_BASE_URL}/forum/posts`);
-        if (!res.ok) {
-          throw new Error(`Request failed: ${res.status}`);
-        }
-        const data = await res.json();
+        if (!res.ok) throw new Error(`Request failed: ${res.status}`);
 
+        const data = await res.json();
         setPosts(data);
 
-        // 初始化交互状态
-        const init = {};
+        const initInteractions = {};
         data.forEach((p) => {
-          init[p._id] = {
+          initInteractions[p._id] = {
             upvoted: false,
             downvoted: false,
             bookmarked: false,
           };
         });
-        setInteractions(init);
+        setInteractions(initInteractions);
       } catch (err) {
         console.error("Failed to load posts:", err);
         setLoadingError("Failed to load posts from server.");
@@ -90,114 +71,108 @@ function ForumPage() {
     fetchPosts();
   }, []);
 
-  const handleCardClick = (post) => {
-    setSelectedPost(post);
-  };
+  const handleCardClick = (post) => setSelectedPost(post);
+  const handleCloseDialog = () => setSelectedPost(null);
 
-  const handleCloseDialog = () => {
-    setSelectedPost(null);
-  };
-
-// 点赞：从后端拿“最新的 post”，然后用它更新本地 posts
-const handleUpvote = async (id) => {
-  // 先更新本地交互状态（按钮状态）
-  setInteractions((prev) => {
-    const prevState = prev[id] || {
-      upvoted: false,
-      downvoted: false,
-      bookmarked: false,
-    };
-    const newUp = !prevState.upvoted;
-    const newDown = newUp ? false : prevState.downvoted;
-    return {
-      ...prev,
-      [id]: {
-        ...prevState,
-        upvoted: newUp,
-        downvoted: newDown,
-      },
-    };
-  });
-
-  try {
-    // 再调用后端，拿到“点赞后的最新帖子”
-    const res = await fetch(`${API_BASE_URL}/forum/posts/${id}/upvote`, {
-      method: "POST",
-    });
-
-    if (!res.ok) {
-      throw new Error(`Upvote failed: ${res.status}`);
-    }
-
-    const updatedPost = await res.json(); // ✅ 后端返回的最新帖子
-
-    // 用最新帖子替换掉 posts 里的旧帖子，这样 likesCount 会刷新
+  // ✅ 统一一个小工具函数，用后端返回的 post 更新到本地 posts 里面
+  const applyPostUpdate = (updatedPost) => {
     setPosts((prev) =>
       prev.map((p) => (p._id === updatedPost._id ? updatedPost : p))
     );
-  } catch (err) {
-    console.error("Failed to upvote:", err);
-  }
-};
+  };
 
-
-
-  // 点踩：这里只控制 UI 状态，不动点赞数量
-  const handleDownvote = async (id) => {
+  // 👍 点赞
+  const handleUpvote = async (id) => {
+    // 先更新前端交互状态（按钮样式）
     setInteractions((prev) => {
-      const prevState =
-        prev[id] || {
-          upvoted: false,
-          downvoted: false,
-          bookmarked: false,
-        };
-
-      const newDown = !prevState.downvoted;
-      const newUp = newDown ? false : prevState.upvoted;
-
+      const prevState = prev[id] || {
+        upvoted: false,
+        downvoted: false,
+        bookmarked: false,
+      };
       return {
         ...prev,
         [id]: {
           ...prevState,
-          upvoted: newUp,
-          downvoted: newDown,
+          upvoted: true,
+          downvoted: false,
+        },
+      };
+    });
+
+    // 再发请求，让后端把 upvotes +1，并把最新帖子数据发回来
+    try {
+      const res = await fetch(`${API_BASE_URL}/forum/posts/${id}/upvote`, {
+        method: "POST",
+      });
+      if (!res.ok) throw new Error(`Upvote failed: ${res.status}`);
+      const data = await res.json();
+      if (data?.post) {
+        applyPostUpdate(data.post);
+      }
+    } catch (err) {
+      console.error("Failed to upvote:", err);
+    }
+  };
+
+  // 👎 点踩
+  const handleDownvote = async (id) => {
+    setInteractions((prev) => {
+      const prevState = prev[id] || {
+        upvoted: false,
+        downvoted: false,
+        bookmarked: false,
+      };
+      return {
+        ...prev,
+        [id]: {
+          ...prevState,
+          upvoted: false,
+          downvoted: true,
         },
       };
     });
 
     try {
-      await fetch(`${API_BASE_URL}/forum/posts/${id}/downvote`, {
+      const res = await fetch(`${API_BASE_URL}/forum/posts/${id}/downvote`, {
         method: "POST",
       });
+      if (!res.ok) throw new Error(`Downvote failed: ${res.status}`);
+      const data = await res.json();
+      if (data?.post) {
+        applyPostUpdate(data.post);
+      }
     } catch (err) {
       console.error("Failed to downvote:", err);
     }
   };
 
-  // 收藏
+  // ⭐ 收藏
   const handleToggleBookmark = async (id) => {
     setInteractions((prev) => {
-      const prevState =
-        prev[id] || {
-          upvoted: false,
-          downvoted: false,
-          bookmarked: false,
-        };
-      const newBookmark = !prevState.bookmarked;
-
+      const prevState = prev[id] || {
+        upvoted: false,
+        downvoted: false,
+        bookmarked: false,
+      };
       return {
         ...prev,
         [id]: {
           ...prevState,
-          bookmarked: newBookmark,
+          bookmarked: !prevState.bookmarked,
         },
       };
     });
 
     try {
-      await fetch(`${API_BASE_URL}/forum/posts/${id}/bookmark`, {
+      const res = await fetch(`${API_BASE_URL}/forum/posts/${id}/bookmark`, {
         method: "POST",
       });
+      if (!res.ok) throw new Error(`Bookmark failed: ${res.status}`);
+      const data = await res.json();
+      if (data?.post) {
+        applyPostUpdate(data.post);
+      }
     } catch (err) {
       console.error("Failed to bookmark:", err);
     }
@@ -223,7 +198,7 @@ const handleUpvote = async (id) => {
         bgcolor: "#F2F2F2",
       }}
     >
-      {/* 顶部：搜索栏 */}
+      {/* 顶部搜索栏 */}
       <Box
         sx={{
           px: { xs: 2, md: 4 },
@@ -261,7 +236,7 @@ const handleUpvote = async (id) => {
         />
       </Box>
 
-      {/* 列表内容 */}
+      {/* 列表区域 */}
       <Box
         sx={{
           flexGrow: 1,
@@ -289,37 +264,29 @@ const handleUpvote = async (id) => {
               downvoted: false,
               bookmarked: false,
             };
-
-            const authorName = getAuthorName(p);
-            const likesCount = getLikesCount(p);
-
             return (
               <ForumPostCard
                 key={p._id}
                 title={p.title}
                 content={p.content}
                 hasMedia={p.hasMedia}
-                authorName={authorName}
-                likesCount={likesCount}
+                // 新增：把作者和点赞数传给卡片
+                authorName={p.authorName || "匿名"}
+                upvotesCount={p.upvotes ?? 0}
+                // 交互状态
                 upvoted={state.upvoted}
                 downvoted={state.downvoted}
                 bookmarked={state.bookmarked}
-                onLike={() => handleUpvote(p._id)}
-                onDislike={() => handleDownvote(p._id)}
-                onToggleFavorite={() => handleToggleBookmark(p._id)}
+                onUpvote={() => handleUpvote(p._id)}
+                onDownvote={() => handleDownvote(p._id)}
+                onToggleBookmark={() => handleToggleBookmark(p._id)}
                 onCardClick={() => handleCardClick(p)}
               />
             );
           })}
 
         {!loading && !loadingError && filteredPosts.length === 0 && (
-          <Typography
-            variant="body2"
-            sx={{
-              color: "#6B7280",
-              mt: 2,
-            }}
-          >
+          <Typography variant="body2" sx={{ color: "#6B7280", mt: 2 }}>
             No posts found. Try a different keyword.
           </Typography>
         )}
@@ -340,13 +307,7 @@ const handleUpvote = async (id) => {
             {selectedPost?.content}
           </Typography>
           {selectedPost?.hasMedia && (
-            <Box
-              sx={{
-                display: "flex",
-                gap: 1.2,
-                mt: 2,
-              }}
-            >
+            <Box sx={{ display: "flex", gap: 1.2, mt: 2 }}>
               {[0, 1, 2].map((i) => (
                 <Box
                   key={i}
