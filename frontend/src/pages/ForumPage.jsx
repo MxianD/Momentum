@@ -271,7 +271,7 @@ function ForumPage() {
                 content={p.content}
                 hasMedia={p.hasMedia}
                 // 新增：把作者和点赞数传给卡片
-                authorName={p.authorName || "匿名"}
+                authorName={p.authorName || "Anonymous"}
                 upvotesCount={p.upvotes ?? 0}
                 // 交互状态
                 upvoted={state.upvoted}
