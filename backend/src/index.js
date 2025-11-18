@@ -35,7 +35,7 @@ app.use(
 );
 
 // 处理预检请求（OPTIONS）
-app.options("*", cors());
+// app.options("*", cors());
 
 // 健康检查
 app.get("/api/health", (req, res) => {

@@ -4,115 +4,128 @@ import ForumPost from "../models/ForumPost.js";
 
 const router = express.Router();
 
-// GET /api/forum/posts  获取所有帖子
-router.get("/posts", async (req, res) => {
-  try {
-    const posts = await ForumPost.find().sort({ createdAt: -1 });
-    res.json(posts);
-  } catch (err) {
-    console.error("Error fetching posts", err);
-    res.status(500).json({ error: "Failed to fetch posts" });
-  }
-});
-
-// POST /api/forum/posts  新建一个帖子
-router.post("/posts", async (req, res) => {
-  try {
-    const { title, content, hasMedia } = req.body;
-    const post = await ForumPost.create({ title, content, hasMedia });
-    res.status(201).json(post);
-  } catch (err) {
-    console.error("Error creating post", err);
-    res.status(500).json({ error: "Failed to create post" });
-  }
-});
-
-// POST /api/forum/posts/:id/upvote  点赞 +1
-router.post("/posts/:id/upvote", async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const updated = await ForumPost.findByIdAndUpdate(
-      id,
-      { $inc: { likesCount: 1 } },   // ✅ 点赞数 +1
-      { new: true }
-    ).populate("author", "name");
-
-    if (!updated) {
-      return res.status(404).json({ error: "Post not found" });
-    }
-
-    res.json(updated);  // ✅ 把最新的帖子数据返回给前端
-  } catch (err) {
-    console.error("Error upvoting post", err);
-    res.status(500).json({ error: "Failed to upvote" });
-  }
-});
-
-// POST /api/forum/posts/:id/downvote  点踩 +1
-router.post("/posts/:id/downvote", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const post = await ForumPost.findByIdAndUpdate(
-      id,
-      { $inc: { downvotes: 1 } },
-      { new: true }
-    );
-    res.json(post);
-  } catch (err) {
-    console.error("Error downvoting", err);
-    res.status(500).json({ error: "Failed to downvote" });
-  }
-});
-
-// POST /api/forum/posts/:id/bookmark  收藏 +1
-router.post("/posts/:id/bookmark", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const post = await ForumPost.findByIdAndUpdate(
-      id,
-      { $inc: { bookmarks: 1 } },
-      { new: true }
-    );
-    res.json(post);
-  } catch (err) {
-    console.error("Error bookmarking", err);
-    res.status(500).json({ error: "Failed to bookmark" });
-  }
-});
-// src/routes/forumRoutes.js 里面 GET /api/forum/posts 的地方
+/**
+ * GET /api/forum/posts
+ * 拿到所有帖子 + 作者名字 + 点赞/点踩/收藏计数
+ */
 router.get("/posts", async (req, res) => {
   try {
     const posts = await ForumPost.find()
       .sort({ createdAt: -1 })
-      .populate("author", "name"); // 只拿作者 name
+      .populate("author", "name"); // 只拿 author.name
 
-    res.json(posts);
+    const mapped = posts.map((p) => {
+      const obj = p.toObject();
+      return {
+        ...obj,
+        authorName: obj.author?.name || "匿名",
+        upvotes: obj.upvotes ?? 0,
+        downvotes: obj.downvotes ?? 0,
+        bookmarks: obj.bookmarks ?? 0,
+      };
+    });
+
+    res.json(mapped);
   } catch (err) {
-    console.error("Error fetching posts", err);
+    console.error("Error fetching forum posts:", err);
     res.status(500).json({ error: "Failed to fetch posts" });
   }
 });
 
-// POST /api/forum/posts  新建一个帖子
-router.post("/posts", async (req, res) => {
+/**
+ * POST /api/forum/posts/:id/upvote
+ * 简单版：每点一次 +1
+ */
+router.post("/posts/:id/upvote", async (req, res) => {
   try {
-    const { title, content, hasMedia, userId, challengeId, source } =
-      req.body;
+    const { id } = req.params;
+    const post = await ForumPost.findById(id);
 
-    const post = await ForumPost.create({
-      title,
-      content,
-      hasMedia: !!hasMedia,
-      source: source || "manual",
-      author: userId || null,
-      challenge: challengeId || null,
+    if (!post) {
+      return res.status(404).json({ error: "Post not found" });
+    }
+
+    post.upvotes = (post.upvotes || 0) + 1;
+    await post.save();
+    await post.populate("author", "name");
+
+    res.json({
+      success: true,
+      post: {
+        ...post.toObject(),
+        authorName: post.author?.name || "匿名",
+        upvotes: post.upvotes ?? 0,
+        downvotes: post.downvotes ?? 0,
+        bookmarks: post.bookmarks ?? 0,
+      },
     });
-
-    res.status(201).json(post);
   } catch (err) {
-    console.error("Error creating post", err);
-    res.status(500).json({ error: "Failed to create post" });
+    console.error("Error upvoting post:", err);
+    res.status(500).json({ error: "Failed to upvote" });
+  }
+});
+
+/**
+ * POST /api/forum/posts/:id/downvote
+ */
+router.post("/posts/:id/downvote", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const post = await ForumPost.findById(id);
+
+    if (!post) {
+      return res.status(404).json({ error: "Post not found" });
+    }
+
+    post.downvotes = (post.downvotes || 0) + 1;
+    await post.save();
+    await post.populate("author", "name");
+
+    res.json({
+      success: true,
+      post: {
+        ...post.toObject(),
+        authorName: post.author?.name || "匿名",
+        upvotes: post.upvotes ?? 0,
+        downvotes: post.downvotes ?? 0,
+        bookmarks: post.bookmarks ?? 0,
+      },
+    });
+  } catch (err) {
+    console.error("Error downvoting post:", err);
+    res.status(500).json({ error: "Failed to downvote" });
+  }
+});
+
+/**
+ * POST /api/forum/posts/:id/bookmark
+ */
+router.post("/posts/:id/bookmark", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const post = await ForumPost.findById(id);
+
+    if (!post) {
+      return res.status(404).json({ error: "Post not found" });
+    }
+
+    post.bookmarks = (post.bookmarks || 0) + 1;
+    await post.save();
+    await post.populate("author", "name");
+
+    res.json({
+      success: true,
+      post: {
+        ...post.toObject(),
+        authorName: post.author?.name || "匿名",
+        upvotes: post.upvotes ?? 0,
+        downvotes: post.downvotes ?? 0,
+        bookmarks: post.bookmarks ?? 0,
+      },
+    });
+  } catch (err) {
+    console.error("Error bookmarking post:", err);
+    res.status(500).json({ error: "Failed to bookmark" });
   }
 });
 
