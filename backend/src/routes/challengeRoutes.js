@@ -5,6 +5,13 @@ import UserChallenge from "../models/UserChallenge.js";
 import ForumPost from "../models/ForumPost.js";
 
 const router = express.Router();
+function isSameDay(d1, d2) {
+  return (
+    d1.getFullYear() === d2.getFullYear() &&
+    d1.getMonth() === d2.getMonth() &&
+    d1.getDate() === d2.getDate()
+  );
+}
 
 // GET /api/challenges/friends   获取“朋友之间的挑战”
 router.get("/friends", async (req, res) => {
@@ -19,7 +26,6 @@ router.get("/friends", async (req, res) => {
   }
 });
 
-// GET /api/challenges/joined/:userId   获取某个用户加入的挑战（和他的状态）
 router.get("/joined/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
@@ -27,12 +33,28 @@ router.get("/joined/:userId", async (req, res) => {
       .populate("challenge")
       .exec();
 
-    res.json(joined);
+    const today = new Date();
+
+    const mapped = joined.map((uc) => {
+      const obj = uc.toObject();
+
+      const last = obj.lastCheckInAt ? new Date(obj.lastCheckInAt) : null;
+      const checkedInToday =
+        last && isSameDay(last, today);  // 用 lastCheckInAt 判断今天是否已打卡
+
+      return {
+        ...obj,
+        checkedInToday,  // 覆盖掉数据库里的布尔值，用“计算出来的今天状态”
+      };
+    });
+
+    res.json(mapped);
   } catch (err) {
     console.error("Error fetching user challenges", err);
     res.status(500).json({ error: "Failed to fetch user challenges" });
   }
 });
+
 
 // POST /api/challenges/:id/join   用户加入某个 challenge
 router.post("/:id/join", async (req, res) => {
@@ -87,28 +109,60 @@ router.post("/:id/checkin", async (req, res) => {
       return res.status(404).json({ error: "Challenge not found" });
     }
 
-    // 找到或创建 UserChallenge
     let uc = await UserChallenge.findOne({
       user: userId,
       challenge: id,
     });
 
+    const now = new Date();
+
     if (!uc) {
+      // 第一次加入+打卡
       uc = await UserChallenge.create({
         user: userId,
         challenge: id,
+        streak: 1,
+        checkedInToday: true,
+        lastNote: note,
+        lastCheckInAt: now,
       });
+    } else {
+      const last = uc.lastCheckInAt ? new Date(uc.lastCheckInAt) : null;
+
+      if (last && isSameDay(last, now)) {
+        // 已经是今天打过卡了 → 不重复加 streak
+        // 你可以选择直接返回当前数据
+        return res.json({
+          userChallenge: await uc.populate("challenge"),
+          forumPost: null, // 或者不再发新帖子
+        });
+      }
+
+      // 计算 last 到现在相差几天
+      let newStreak = 1;
+      if (last) {
+        const diffMs = now - last;
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+        if (diffDays === 1) {
+          // 昨天也打卡了 → 连续
+          newStreak = uc.streak + 1;
+        } else {
+          // 中间断了（diffDays >= 2）或者别的情况 → streak 重新从 1 开始
+          newStreak = 1;
+        }
+      }
+
+      uc.streak = newStreak;
+      uc.checkedInToday = true;
+      uc.lastNote = note;
+      uc.lastCheckInAt = now;
+      await uc.save();
     }
 
-    // 简化版 streak 逻辑：每次 check in streak +1
-    uc.streak += 1;
-    uc.checkedInToday = true;
-    uc.lastNote = note;
-    uc.lastCheckInAt = new Date();
-    await uc.save();
     uc = await uc.populate("challenge");
 
-    // 顺便在 Forum 创建一条帖子，source=checkin
+    // Forum 发帖逻辑保持不变
     const post = await ForumPost.create({
       title: challenge.title,
       content: note,
@@ -127,6 +181,7 @@ router.post("/:id/checkin", async (req, res) => {
     res.status(500).json({ error: "Failed to check in" });
   }
 });
+
 router.post("/create", async (req, res) => {
   try {
     const { title, description, time, type } = req.body;
