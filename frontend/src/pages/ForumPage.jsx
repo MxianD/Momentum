@@ -100,18 +100,15 @@ function ForumPage() {
 
 // 点赞：从后端拿“最新的 post”，然后用它更新本地 posts
 const handleUpvote = async (id) => {
-  // 先更新交互状态（高亮按钮）
+  // 先更新本地交互状态（按钮状态）
   setInteractions((prev) => {
-    const prevState =
-      prev[id] || {
-        upvoted: false,
-        downvoted: false,
-        bookmarked: false,
-      };
-
+    const prevState = prev[id] || {
+      upvoted: false,
+      downvoted: false,
+      bookmarked: false,
+    };
     const newUp = !prevState.upvoted;
     const newDown = newUp ? false : prevState.downvoted;
-
     return {
       ...prev,
       [id]: {
@@ -123,21 +120,18 @@ const handleUpvote = async (id) => {
   });
 
   try {
+    // 再调用后端，拿到“点赞后的最新帖子”
     const res = await fetch(`${API_BASE_URL}/forum/posts/${id}/upvote`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
     });
 
     if (!res.ok) {
-      console.error("Upvote failed:", res.status);
-      return;
+      throw new Error(`Upvote failed: ${res.status}`);
     }
 
-    // ✅ 关键：后端返回的是“更新后的这一条帖子”
-    // 例如：{ _id, title, content, likesCount, author: {...}, ... }
-    const updatedPost = await res.json();
+    const updatedPost = await res.json(); // ✅ 后端返回的最新帖子
 
-    // 用后端返回的这条 post 覆盖掉本地 posts 里面对应的那一条
+    // 用最新帖子替换掉 posts 里的旧帖子，这样 likesCount 会刷新
     setPosts((prev) =>
       prev.map((p) => (p._id === updatedPost._id ? updatedPost : p))
     );
@@ -145,6 +139,7 @@ const handleUpvote = async (id) => {
     console.error("Failed to upvote:", err);
   }
 };
+
 
 
   // 点踩：这里只控制 UI 状态，不动点赞数量
