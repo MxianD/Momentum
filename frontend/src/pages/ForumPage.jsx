@@ -17,41 +17,68 @@ import SearchIcon from "@mui/icons-material/Search";
 import BottomNavBar from "../components/BottomNavBar.jsx";
 import ForumPostCard from "../components/ForumPostCard.jsx";
 
-// 开发阶段后端地址，部署后可以抽到环境变量里
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
 
+// 小工具：从帖子对象中“尽可能”找出作者名字
+function getAuthorName(post) {
+  if (post.author && typeof post.author === "object" && post.author.name) {
+    // 后端 populate 出来的 { _id, name }
+    return post.author.name;
+  }
+  if (typeof post.authorName === "string") return post.authorName;
+  if (post.user && post.user.name) return post.user.name;
+  if (typeof post.userName === "string") return post.userName;
+
+  // 如果 author 是一个字符串而且不是很短（大概率是 ObjectId），就不要展示
+  if (typeof post.author === "string" && post.author.length < 20) {
+    return post.author;
+  }
+
+  return "Anonymous";
+}
+
+// 小工具：从帖子对象中读点赞数量
+function getLikesCount(post) {
+  if (typeof post.likesCount === "number") return post.likesCount;
+  if (Array.isArray(post.likes)) return post.likes.length;
+  if (typeof post.upvotes === "number") return post.upvotes;
+  return 0;
+}
+
 function ForumPage() {
   const [posts, setPosts] = useState([]);
-  const [interactions, setInteractions] = useState({}); // { [id]: { upvoted, downvoted, bookmarked } }
+  const [interactions, setInteractions] = useState({});
   const [search, setSearch] = useState("");
   const [selectedPost, setSelectedPost] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadingError, setLoadingError] = useState("");
 
-  // 加载后端帖子
+  // 加载帖子
   useEffect(() => {
     const fetchPosts = async () => {
       try {
         setLoading(true);
         setLoadingError("");
+
         const res = await fetch(`${API_BASE_URL}/forum/posts`);
         if (!res.ok) {
           throw new Error(`Request failed: ${res.status}`);
         }
         const data = await res.json();
+
         setPosts(data);
 
-        // 初始化交互状态（默认都没点过）
-        const initInteractions = {};
+        // 初始化交互状态
+        const init = {};
         data.forEach((p) => {
-          initInteractions[p._id] = {
+          init[p._id] = {
             upvoted: false,
             downvoted: false,
             bookmarked: false,
           };
         });
-        setInteractions(initInteractions);
+        setInteractions(init);
       } catch (err) {
         console.error("Failed to load posts:", err);
         setLoadingError("Failed to load posts from server.");
@@ -71,49 +98,68 @@ function ForumPage() {
     setSelectedPost(null);
   };
 
-  // 点赞
-  const handleUpvote = async (id) => {
-    setInteractions((prev) => {
-      const prevState = prev[id] || {
+// 点赞：从后端拿“最新的 post”，然后用它更新本地 posts
+const handleUpvote = async (id) => {
+  // 先更新交互状态（高亮按钮）
+  setInteractions((prev) => {
+    const prevState =
+      prev[id] || {
         upvoted: false,
         downvoted: false,
         bookmarked: false,
       };
-      const newUp = !prevState.upvoted;
-      const newDown = newUp ? false : prevState.downvoted;
-      return {
-        ...prev,
-        [id]: {
-          ...prevState,
-          upvoted: newUp,
-          downvoted: newDown,
-        },
-      };
+
+    const newUp = !prevState.upvoted;
+    const newDown = newUp ? false : prevState.downvoted;
+
+    return {
+      ...prev,
+      [id]: {
+        ...prevState,
+        upvoted: newUp,
+        downvoted: newDown,
+      },
+    };
+  });
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/forum/posts/${id}/upvote`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
     });
 
-    // 只有从“未点赞”变成“点赞”时才调后端接口（简单 +1）
-    try {
-      const current = interactions[id];
-      if (!current || !current.upvoted) {
-        await fetch(`${API_BASE_URL}/forum/posts/${id}/upvote`, {
-          method: "POST",
-        });
-      }
-    } catch (err) {
-      console.error("Failed to upvote:", err);
+    if (!res.ok) {
+      console.error("Upvote failed:", res.status);
+      return;
     }
-  };
 
-  // 点踩
+    // ✅ 关键：后端返回的是“更新后的这一条帖子”
+    // 例如：{ _id, title, content, likesCount, author: {...}, ... }
+    const updatedPost = await res.json();
+
+    // 用后端返回的这条 post 覆盖掉本地 posts 里面对应的那一条
+    setPosts((prev) =>
+      prev.map((p) => (p._id === updatedPost._id ? updatedPost : p))
+    );
+  } catch (err) {
+    console.error("Failed to upvote:", err);
+  }
+};
+
+
+  // 点踩：这里只控制 UI 状态，不动点赞数量
   const handleDownvote = async (id) => {
     setInteractions((prev) => {
-      const prevState = prev[id] || {
-        upvoted: false,
-        downvoted: false,
-        bookmarked: false,
-      };
+      const prevState =
+        prev[id] || {
+          upvoted: false,
+          downvoted: false,
+          bookmarked: false,
+        };
+
       const newDown = !prevState.downvoted;
       const newUp = newDown ? false : prevState.upvoted;
+
       return {
         ...prev,
         [id]: {
@@ -125,12 +171,9 @@ function ForumPage() {
     });
 
     try {
-      const current = interactions[id];
-      if (!current || !current.downvoted) {
-        await fetch(`${API_BASE_URL}/forum/posts/${id}/downvote`, {
-          method: "POST",
-        });
-      }
+      await fetch(`${API_BASE_URL}/forum/posts/${id}/downvote`, {
+        method: "POST",
+      });
     } catch (err) {
       console.error("Failed to downvote:", err);
     }
@@ -139,12 +182,14 @@ function ForumPage() {
   // 收藏
   const handleToggleBookmark = async (id) => {
     setInteractions((prev) => {
-      const prevState = prev[id] || {
-        upvoted: false,
-        downvoted: false,
-        bookmarked: false,
-      };
+      const prevState =
+        prev[id] || {
+          upvoted: false,
+          downvoted: false,
+          bookmarked: false,
+        };
       const newBookmark = !prevState.bookmarked;
+
       return {
         ...prev,
         [id]: {
@@ -155,18 +200,15 @@ function ForumPage() {
     });
 
     try {
-      const current = interactions[id];
-      if (!current || !current.bookmarked) {
-        await fetch(`${API_BASE_URL}/forum/posts/${id}/bookmark`, {
-          method: "POST",
-        });
-      }
+      await fetch(`${API_BASE_URL}/forum/posts/${id}/bookmark`, {
+        method: "POST",
+      });
     } catch (err) {
       console.error("Failed to bookmark:", err);
     }
   };
 
-  // 搜索过滤（在前端做）
+  // 搜索过滤
   const filteredPosts = useMemo(() => {
     if (!search.trim()) return posts;
     const q = search.toLowerCase();
@@ -224,22 +266,16 @@ function ForumPage() {
         />
       </Box>
 
-      {/* 列表内容区域 */}
+      {/* 列表内容 */}
       <Box
         sx={{
           flexGrow: 1,
           px: { xs: 2, md: 4 },
-          pb: 8, // 给底部导航留空间
+          pb: 8,
         }}
       >
         {loading && (
-          <Box
-            sx={{
-              display: "flex",
-              justifyContent: "center",
-              mt: 4,
-            }}
-          >
+          <Box sx={{ display: "flex", justifyContent: "center", mt: 4 }}>
             <CircularProgress size={28} />
           </Box>
         )}
@@ -259,9 +295,8 @@ function ForumPage() {
               bookmarked: false,
             };
 
-            // 如果后端有 author.name 和 likes 数组，就用它们
-            const authorName = p.author?.name || p.authorName || "Anonymous";
-            const likesCount = Array.isArray(p.likes) ? p.likes.length : 0;
+            const authorName = getAuthorName(p);
+            const likesCount = getLikesCount(p);
 
             return (
               <ForumPostCard
@@ -269,18 +304,14 @@ function ForumPage() {
                 title={p.title}
                 content={p.content}
                 hasMedia={p.hasMedia}
-                // ✅ 右上角：作者 & 点赞数
                 authorName={authorName}
                 likesCount={likesCount}
-                // 状态（如果你之后想在卡片里改样式，可以用）
                 upvoted={state.upvoted}
                 downvoted={state.downvoted}
                 bookmarked={state.bookmarked}
-                // ✅ 交互回调，名字改成 onLike / onDislike / onToggleFavorite
                 onLike={() => handleUpvote(p._id)}
                 onDislike={() => handleDownvote(p._id)}
                 onToggleFavorite={() => handleToggleBookmark(p._id)}
-                // 点击整张卡片 -> 打开详情
                 onCardClick={() => handleCardClick(p)}
               />
             );
