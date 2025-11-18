@@ -31,14 +31,21 @@ router.post("/posts", async (req, res) => {
 router.post("/posts/:id/upvote", async (req, res) => {
   try {
     const { id } = req.params;
+
+    // 示例 1：如果你用的是数字 likesCount
     const post = await ForumPost.findByIdAndUpdate(
       id,
-      { $inc: { upvotes: 1 } },
-      { new: true }
-    );
-    res.json(post);
+      { $inc: { likesCount: 1 } },   // 点赞数 +1（你也可以根据用户状态来 +1 / -1）
+      { new: true }                  // ✅ 返回更新后的文档
+    ).populate("author", "name");
+
+    if (!post) {
+      return res.status(404).json({ error: "Post not found" });
+    }
+
+    res.json(post);                  // ✅ 把更新后的 post 返回给前端
   } catch (err) {
-    console.error("Error upvoting", err);
+    console.error("Upvote error:", err);
     res.status(500).json({ error: "Failed to upvote" });
   }
 });
@@ -74,7 +81,19 @@ router.post("/posts/:id/bookmark", async (req, res) => {
     res.status(500).json({ error: "Failed to bookmark" });
   }
 });
-// 只贴 /posts 这一段，其他点赞/收藏逻辑保留你现在的版本即可
+// src/routes/forumRoutes.js 里面 GET /api/forum/posts 的地方
+router.get("/posts", async (req, res) => {
+  try {
+    const posts = await ForumPost.find({})
+      .sort({ createdAt: -1 })
+      .populate("author", "name"); // ✅ 把作者的 name 一起查出来
+
+    res.json(posts);
+  } catch (err) {
+    console.error("Error fetching forum posts:", err);
+    res.status(500).json({ error: "Failed to fetch posts" });
+  }
+});
 
 // POST /api/forum/posts  新建一个帖子
 router.post("/posts", async (req, res) => {

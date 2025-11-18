@@ -6,7 +6,7 @@ const ForumPostSchema = new mongoose.Schema(
     title: { type: String, required: true },
     content: { type: String, required: true },
     hasMedia: { type: Boolean, default: false },
-
+    author: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     // 来源：普通发帖 / check-in
     source: {
       type: String,

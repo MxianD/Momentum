@@ -12,12 +12,30 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // 中间件
+const allowedOrigins = [
+  "http://localhost:5173",              // Vite 本地开发
+  "http://localhost:3000",              // 如果你曾用过 3000
+  "https://momentumfrontend.netlify.app" // 你的前端线上地址
+];
+
 app.use(
   cors({
-    origin: "*", // 开发阶段先全部放行，之后可以改成你的前端域名
+    origin(origin, callback) {
+      // Postman / curl / 同源请求时 origin 可能为 undefined，所以也放行
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
   })
 );
-app.use(express.json());
+
+// 处理预检请求（OPTIONS）
+app.options("*", cors());
 
 // 健康检查
 app.get("/api/health", (req, res) => {
