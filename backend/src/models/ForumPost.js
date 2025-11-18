@@ -6,25 +6,20 @@ const ForumPostSchema = new mongoose.Schema(
     title: { type: String, required: true },
     content: { type: String, required: true },
     hasMedia: { type: Boolean, default: false },
-    author: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-    // ✅ 新增/确认：点赞计数
-    likesCount: { type: Number, default: 0 },
 
-    // 如果你有踩、收藏也可以加：
-    downvotesCount: { type: Number, default: 0 },
-    bookmarksCount: { type: Number, default: 0 },
+    // 发帖人
+    author: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
 
-    source: { type: String },       // eg. "checkin"
-    challenge: { type: mongoose.Schema.Types.ObjectId, ref: "Challenge" },
     // 来源：普通发帖 / check-in
     source: {
       type: String,
       enum: ["manual", "checkin"],
       default: "manual",
     },
-
-    // 发帖人
-    author: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
 
     // 关联的 challenge（如果这是某个挑战的 check-in）
     challenge: {
@@ -33,7 +28,7 @@ const ForumPostSchema = new mongoose.Schema(
       default: null,
     },
 
-    // 点赞 / 点踩 / 收藏 （按用户）
+    // 按用户存储点赞 / 点踩 / 收藏
     upvotedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     downvotedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     bookmarkedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
@@ -41,6 +36,7 @@ const ForumPostSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// virtual 计数
 ForumPostSchema.virtual("upvotes").get(function () {
   return this.upvotedBy?.length || 0;
 });
