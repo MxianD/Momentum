@@ -29,7 +29,15 @@ app.use("/api/forum", forumRoutes);
 // User 路由
 app.use("/api/users", userRoutes);
 app.use("/api/challenges", challengeRoutes);
+// 很简单的根路径，防止看到 Cannot GET /
+app.get("/", (req, res) => {
+  res.send("Momentum backend is running 🚀");
+});
 
+// 健康检查接口
+app.get("/health", (req, res) => {
+  res.json({ status: "ok" });
+});
 // 连接数据库并启动服务器
 mongoose
   .connect(process.env.MONGODB_URI)
