@@ -15,7 +15,7 @@ const PORT = process.env.PORT || 3001;
 const allowedOrigins = [
   "http://localhost:5173",              // Vite 本地开发
   "http://localhost:3000",              // 如果你曾用过 3000
-  "https://momentumfrontend.netlify.app" // 你的前端线上地址
+  "https://momentumfrontend.netlify.app", // 你的前端线上地址
 ];
 
 app.use(
@@ -34,19 +34,19 @@ app.use(
   })
 );
 
-// 处理预检请求（OPTIONS）
-// app.options("*", cors());
+// ⭐⭐ 这行是关键：解析 JSON body
+app.use(express.json());
 
 // 健康检查
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
-// Forum 路由
+// 路由
 app.use("/api/forum", forumRoutes);
-// User 路由
 app.use("/api/users", userRoutes);
 app.use("/api/challenges", challengeRoutes);
+
 // 很简单的根路径，防止看到 Cannot GET /
 app.get("/", (req, res) => {
   res.send("Momentum backend is running 🚀");
@@ -56,6 +56,7 @@ app.get("/", (req, res) => {
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
+
 // 连接数据库并启动服务器
 mongoose
   .connect(process.env.MONGODB_URI)

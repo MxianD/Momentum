@@ -20,7 +20,7 @@ router.get("/posts", async (req, res) => {
       return {
         ...obj,
         authorName: obj.author?.name || "Anonymous",
-        upvotes: obj.upvotes ?? 0,       // 来自 virtual
+        upvotes: obj.upvotes ?? 0, // 来自 virtual
         downvotes: obj.downvotes ?? 0,
         bookmarks: obj.bookmarks ?? 0,
       };
@@ -44,7 +44,7 @@ router.post("/posts/:id/upvote", async (req, res) => {
   try {
     const { id } = req.params;
     const { userId } = req.body;
-
+    console.log("BODY in /upvote:", req.body);
     if (!userId) {
       return res.status(400).json({ error: "userId is required" });
     }
@@ -87,7 +87,6 @@ router.post("/posts/:id/upvote", async (req, res) => {
   }
 });
 
-
 /**
  * POST /api/forum/posts/:id/downvote
  * 按用户切换点踩（再次点击取消），并清除该用户的点赞
@@ -109,22 +108,16 @@ router.post("/posts/:id/downvote", async (req, res) => {
 
     const uid = userId.toString();
 
-    const hasDownvoted = post.downvotedBy.some(
-      (u) => u.toString() === uid
-    );
+    const hasDownvoted = post.downvotedBy.some((u) => u.toString() === uid);
 
     if (hasDownvoted) {
       // 已点踩 -> 取消
-      post.downvotedBy = post.downvotedBy.filter(
-        (u) => u.toString() !== uid
-      );
+      post.downvotedBy = post.downvotedBy.filter((u) => u.toString() !== uid);
     } else {
       // 未点踩 -> 添加
       post.downvotedBy.push(uid);
       // 取消点赞
-      post.upvotedBy = post.upvotedBy.filter(
-        (u) => u.toString() !== uid
-      );
+      post.upvotedBy = post.upvotedBy.filter((u) => u.toString() !== uid);
     }
 
     await post.save();
@@ -169,15 +162,11 @@ router.post("/posts/:id/bookmark", async (req, res) => {
 
     const uid = userId.toString();
 
-    const hasBookmarked = post.bookmarkedBy.some(
-      (u) => u.toString() === uid
-    );
+    const hasBookmarked = post.bookmarkedBy.some((u) => u.toString() === uid);
 
     if (hasBookmarked) {
       // 已收藏 -> 取消
-      post.bookmarkedBy = post.bookmarkedBy.filter(
-        (u) => u.toString() !== uid
-      );
+      post.bookmarkedBy = post.bookmarkedBy.filter((u) => u.toString() !== uid);
     } else {
       // 未收藏 -> 收藏
       post.bookmarkedBy.push(uid);
