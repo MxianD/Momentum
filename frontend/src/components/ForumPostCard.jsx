@@ -84,7 +84,7 @@ export default function ForumPostCard({
             variant="caption"
             sx={{ color: "#4B5563", whiteSpace: "nowrap" }}
           >
-            {authorName} · {upvotesCount} likes
+            {/* {authorName} · {upvotesCount} likes */}
           </Typography>
           <AvatarGroupMini />
         </Stack>
