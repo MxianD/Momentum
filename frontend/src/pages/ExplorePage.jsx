@@ -27,7 +27,7 @@ const recommended = [
     _id: "691beb60bcfe398e75f30542",
     title: "Everyday Meditation",
     leader: "Challenge Leader",
-    time: "10 Min / day",
+    time: "10 Min / day - 1 week",
     description:
       "Build a daily meditation habit with short 10-minute sessions you can do anytime.",
     image: meditationImg,
@@ -36,7 +36,7 @@ const recommended = [
     id: "691beb74bcfe398e75f30544",
     title: "Stay Hydrated",
     leader: "Challenge Leader",
-    time: "Daily",
+    time: "Daily - 1 week",
     description:
       "Drink enough water every day and keep track of your hydration goal together.",
     image: meditationImg,
@@ -45,7 +45,7 @@ const recommended = [
     id: "691beb94bcfe398e75f30548",
     title: "Morning Stretch",
     leader: "Challenge Leader",
-    time: "5 Min / day",
+    time: "5 Min / day - 1 week",
     description:
       "Loosen up with a quick morning stretch to energize your body and mind.",
     image: meditationImg,

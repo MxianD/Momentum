@@ -36,7 +36,7 @@ const systemGoals = [
   {
     id: "system-1",
     title: "Stay hydrated",
-    subtitle: "and 7 others did it today",
+    subtitle: "",
     streak: 5,
     progressText: "4/7",
     checkedInToday: false,
@@ -428,10 +428,10 @@ function HomePage() {
             mb: 2,
           }}
         >
-          Good morning, {displayName}!
+          Hello, {displayName}!
         </Typography>
 
-        <Typography
+        {/* <Typography
           variant="body2"
           sx={{
             color: "rgba(255,255,255,0.9)",
@@ -441,11 +441,11 @@ function HomePage() {
           }}
         >
           Weekly ranking &gt;
-        </Typography>
+        </Typography> */}
 
-        {rankingData.map((r) => (
+        {/* {rankingData.map((r) => (
           <RankingRow key={r.rank} {...r} />
-        ))}
+        ))} */}
       </Box>
 
       {/* 中间白色内容区域 */}

@@ -131,7 +131,7 @@ export default function ForumPostCard({
         }}
       >
         {/* 左侧：黑色 pill，里面两个图标 */}
-        <Box
+        {/* <Box
           sx={{
             display: "inline-flex",
             alignItems: "center",
@@ -176,10 +176,10 @@ export default function ForumPostCard({
           >
             <ThumbDownOffAltIcon sx={{ fontSize: 16 }} />
           </IconButton>
-        </Box>
+        </Box> */}
 
         {/* 右侧：收藏按钮 */}
-        <IconButton
+        {/* <IconButton
           size="small"
           onClick={(e) => {
             e.stopPropagation();
@@ -198,7 +198,7 @@ export default function ForumPostCard({
           ) : (
             <BookmarkBorderIcon sx={{ fontSize: 18 }} />
           )}
-        </IconButton>
+        </IconButton> */}
       </Box>
     </Paper>
   );
