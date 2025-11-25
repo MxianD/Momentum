@@ -93,7 +93,7 @@ export default function BottomNavBar() {
           <TabItem
             icon={<GroupOutlinedIcon />}
             label="Friends"
-            onClick={() => {}}
+            onClick={() => navigate("/friends")}
           />
           <TabItem
             icon={<ForumOutlinedIcon />}

@@ -161,8 +161,6 @@ function ExplorePage() {
       return;
     }
 
-    // 目前前端模板 challenge 没有 _id，不知道该向哪条数据库记录写入。
-    // 为了不骗你，这里先给出提示。
     if (!challenge._id) {
       // alert(
       //   "当前这几个 Recommended 挑战还只是前端模板。\n如果想把它们真正写入数据库并在 Home 里显示，需要先在后端为它们建对应的 challenge 记录，再把 _id 填到前端 recommended 里。"

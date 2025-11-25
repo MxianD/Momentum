@@ -12,6 +12,7 @@ import HomePage from "./pages/HomePage.jsx";
 import ForumPage from "./pages/ForumPage.jsx";
 import ExplorePage from "./pages/ExplorePage.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
+import FriendsPage from "./pages/FriendsPage.jsx";
 
 const theme = createTheme({
   palette: {
@@ -105,7 +106,14 @@ function App() {
                 </RequireAuth>
               }
             />
-
+            <Route
+              path="/friends"
+              element={
+                <RequireAuth user={user}>
+                  <FriendsPage />
+                </RequireAuth>
+              }
+            />
             {/* 兜底：未知路径都重定向到 / */}
             <Route path="*" element={<Navigate to="/" replace />} />
             <Route path="/home" element={<HomePage />} />

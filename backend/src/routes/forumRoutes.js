@@ -11,8 +11,9 @@ const router = express.Router();
 router.get("/posts", async (req, res) => {
   try {
     const posts = await ForumPost.find()
-      .sort({ createdAt: -1 })
-      .populate("author", "name");
+  .sort({ createdAt: -1 })
+  .populate("author", "name")
+  .populate("comments.user", "name");   // ⭐⭐ 新增
 
     const mapped = posts.map((p) => {
       const obj = p.toObject(); // 已包含 virtuals
@@ -190,6 +191,45 @@ router.post("/posts/:id/bookmark", async (req, res) => {
   } catch (err) {
     console.error("Error bookmarking post:", err);
     res.status(500).json({ error: "Failed to bookmark" });
+  }
+});
+/**
+ * POST /api/forum/posts/:id/comments
+ * 给帖子添加评论
+ * body: { userId: "xxx", text: "评论内容" }
+ */
+router.post("/posts/:id/comments", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId, text } = req.body;
+
+    if (!userId || !text.trim()) {
+      return res.status(400).json({ error: "userId and text required" });
+    }
+
+    const post = await ForumPost.findById(id);
+    if (!post) return res.status(404).json({ error: "Post not found" });
+
+    const newComment = {
+      id: `${Date.now()}`,
+      user: userId,
+      text,
+      createdAt: new Date(),
+    };
+
+    post.comments.push(newComment);
+    await post.save();
+
+    await post.populate("author", "name");
+    await post.populate("comments.user", "name");
+
+    res.json({
+      success: true,
+      post: post.toObject(),
+    });
+  } catch (err) {
+    console.error("Error adding comment:", err);
+    res.status(500).json({ error: "Failed to add comment" });
   }
 });
 
