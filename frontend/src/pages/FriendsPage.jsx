@@ -210,11 +210,11 @@ function FriendsPage() {
         }
         const data = await res.json();
 
-        // 按 createdAt 升序（最早在上面）
+        // 按 createdAt 降序（最早在上面）
         const sorted = [...data].sort((a, b) => {
           const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
           const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-          return da - db;
+          return db - da;
         });
 
         const normalized = sorted.map((p) => {

@@ -11,14 +11,27 @@ import {
   DialogActions,
   Button,
   CircularProgress,
+  Stack,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
+import AddIcon from "@mui/icons-material/Add";
+import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
 
 import BottomNavBar from "../components/BottomNavBar.jsx";
 import ForumPostCard from "../components/ForumPostCard.jsx";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
+
+// 判断某个 userId 是否在一个 ObjectId 数组中
+const isUserInArray = (arr, userId) => {
+  if (!Array.isArray(arr) || !userId) return false;
+  return arr.some((u) => {
+    if (typeof u === "string") return u === userId;
+    if (u && typeof u === "object") return u._id === userId;
+    return false;
+  });
+};
 
 function ForumPage() {
   const [posts, setPosts] = useState([]);
@@ -27,18 +40,8 @@ function ForumPage() {
   const [selectedPost, setSelectedPost] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadingError, setLoadingError] = useState("");
-  // 判断某个 userId 是否在一个 ObjectId 数组中
-  const isUserInArray = (arr, userId) => {
-    if (!Array.isArray(arr)) return false;
-    return arr.some((u) => {
-      // 可能是 string，也可能是 {_id: "..."}
-      if (typeof u === "string") return u === userId;
-      if (u && typeof u === "object") return u._id === userId;
-      return false;
-    });
-  };
 
-  // 当前用户（点赞只用于前端状态，不做防刷）
+  // 当前用户
   const [currentUser, setCurrentUser] = useState(null);
   useEffect(() => {
     try {
@@ -48,38 +51,61 @@ function ForumPage() {
       console.error("Failed to parse user from localStorage", e);
     }
   }, []);
+  const userId = currentUser?._id;
 
-  // 加载帖子
-  useEffect(() => {
-    const fetchPosts = async () => {
-      try {
-        setLoading(true);
-        setLoadingError("");
-        const res = await fetch(`${API_BASE_URL}/forum/posts`);
-        if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+  // 发表知识贴 Dialog 状态
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [newBody, setNewBody] = useState("");
+  const [newCategories, setNewCategories] = useState(""); // 预留分类，逗号分隔
+  const [newFile, setNewFile] = useState(null);
+  const [posting, setPosting] = useState(false);
 
-        const data = await res.json();
-        setPosts(data);
+  // 加载帖子（只要“心得 / 知识帖”，排除 checkin）
+  const fetchPosts = async () => {
+    try {
+      setLoading(true);
+      setLoadingError("");
+      const res = await fetch(`${API_BASE_URL}/forum/posts`);
+      if (!res.ok) throw new Error(`Request failed: ${res.status}`);
 
-        const initInteractions = {};
-        data.forEach((p) => {
-          initInteractions[p._id] = {
-            upvoted: false,
-            downvoted: false,
-            bookmarked: false,
-          };
+      const data = await res.json();
+
+      // ❗ 关键：过滤掉所有 source === "checkin" 的打卡贴
+      const knowledgeOnly = (data || [])
+        .filter((p) => p.source !== "checkin")
+        // 知识帖按时间：最新在最上面
+        .sort((a, b) => {
+          const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return db - da;
         });
-        setInteractions(initInteractions);
-      } catch (err) {
-        console.error("Failed to load posts:", err);
-        setLoadingError("Failed to load posts from server.");
-      } finally {
-        setLoading(false);
-      }
-    };
 
+      setPosts(knowledgeOnly);
+    } catch (err) {
+      console.error("Failed to load posts:", err);
+      setLoadingError("Failed to load posts from server.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchPosts();
   }, []);
+
+  // 根据 posts + currentUser 计算交互状态
+  useEffect(() => {
+    const init = {};
+    posts.forEach((p) => {
+      init[p._id] = {
+        upvoted: isUserInArray(p.upvotedBy, userId),
+        downvoted: isUserInArray(p.downvotedBy, userId),
+        bookmarked: isUserInArray(p.bookmarkedBy, userId),
+      };
+    });
+    setInteractions(init);
+  }, [posts, userId]);
 
   const handleCardClick = (post) => setSelectedPost(post);
   const handleCloseDialog = () => setSelectedPost(null);
@@ -92,184 +118,225 @@ function ForumPage() {
   };
 
   // 👍 点赞
-const handleUpvote = async (id) => {
-  if (!currentUser?._id) {
-    alert("请先登录再点赞");
-    return;
-  }
-
-  try {
-    const res = await fetch(`${API_BASE_URL}/forum/posts/${id}/upvote`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ userId: currentUser._id }),
-    });
-
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || `Upvote failed: ${res.status}`);
+  const handleUpvote = async (id) => {
+    if (!userId) {
+      alert("请先登录再点赞");
+      return;
     }
 
-    const updatedPost = data.post;
-    if (updatedPost) {
-      // 更新 posts 里的那条数据（点赞数、数组等）
-      applyPostUpdate(updatedPost);
-
-      // 根据后端返回的 upvotedBy / downvotedBy 来更新交互状态
-      setInteractions((prev) => {
-        const prevState = prev[id] || {
-          upvoted: false,
-          downvoted: false,
-          bookmarked: false,
-        };
-
-        const upvoted = isUserInArray(
-          updatedPost.upvotedBy,
-          currentUser._id
-        );
-        const downvoted = isUserInArray(
-          updatedPost.downvotedBy,
-          currentUser._id
-        );
-
-        return {
-          ...prev,
-          [id]: {
-            ...prevState,
-            upvoted,
-            downvoted,
-          },
-        };
+    try {
+      const res = await fetch(`${API_BASE_URL}/forum/posts/${id}/upvote`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ userId }),
       });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || `Upvote failed: ${res.status}`);
+      }
+
+      const updatedPost = data.post;
+      if (updatedPost) {
+        applyPostUpdate(updatedPost);
+
+        setInteractions((prev) => {
+          const prevState = prev[id] || {
+            upvoted: false,
+            downvoted: false,
+            bookmarked: false,
+          };
+
+          const upvoted = isUserInArray(updatedPost.upvotedBy, userId);
+          const downvoted = isUserInArray(updatedPost.downvotedBy, userId);
+
+          return {
+            ...prev,
+            [id]: { ...prevState, upvoted, downvoted },
+          };
+        });
+      }
+    } catch (err) {
+      console.error("Failed to upvote:", err);
+      alert(err.message || "Failed to upvote");
     }
-  } catch (err) {
-    console.error("Failed to upvote:", err);
-    alert(err.message || "Failed to upvote");
-  }
-};
+  };
 
   // 👎 点踩
-const handleDownvote = async (id) => {
-  if (!currentUser?._id) {
-    alert("请先登录再点踩");
-    return;
-  }
-
-  try {
-    const res = await fetch(`${API_BASE_URL}/forum/posts/${id}/downvote`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ userId: currentUser._id }),
-    });
-
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || `Downvote failed: ${res.status}`);
+  const handleDownvote = async (id) => {
+    if (!userId) {
+      alert("请先登录再点踩");
+      return;
     }
 
-    const updatedPost = data.post;
-    if (updatedPost) {
-      applyPostUpdate(updatedPost);
-
-      setInteractions((prev) => {
-        const prevState = prev[id] || {
-          upvoted: false,
-          downvoted: false,
-          bookmarked: false,
-        };
-
-        const upvoted = isUserInArray(
-          updatedPost.upvotedBy,
-          currentUser._id
-        );
-        const downvoted = isUserInArray(
-          updatedPost.downvotedBy,
-          currentUser._id
-        );
-
-        return {
-          ...prev,
-          [id]: {
-            ...prevState,
-            upvoted,
-            downvoted,
-          },
-        };
+    try {
+      const res = await fetch(`${API_BASE_URL}/forum/posts/${id}/downvote`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ userId }),
       });
-    }
-  } catch (err) {
-    console.error("Failed to downvote:", err);
-    alert(err.message || "Failed to downvote");
-  }
-};
 
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || `Downvote failed: ${res.status}`);
+      }
+
+      const updatedPost = data.post;
+      if (updatedPost) {
+        applyPostUpdate(updatedPost);
+
+        setInteractions((prev) => {
+          const prevState = prev[id] || {
+            upvoted: false,
+            downvoted: false,
+            bookmarked: false,
+          };
+
+          const upvoted = isUserInArray(updatedPost.upvotedBy, userId);
+          const downvoted = isUserInArray(updatedPost.downvotedBy, userId);
+
+          return {
+            ...prev,
+            [id]: { ...prevState, upvoted, downvoted },
+          };
+        });
+      }
+    } catch (err) {
+      console.error("Failed to downvote:", err);
+      alert(err.message || "Failed to downvote");
+    }
+  };
 
   // ⭐ 收藏
-const handleToggleBookmark = async (id) => {
-  if (!currentUser?._id) {
-    alert("请先登录再收藏");
-    return;
-  }
-
-  try {
-    const res = await fetch(`${API_BASE_URL}/forum/posts/${id}/bookmark`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ userId: currentUser._id }),
-    });
-
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || `Bookmark failed: ${res.status}`);
+  const handleToggleBookmark = async (id) => {
+    if (!userId) {
+      alert("请先登录再收藏");
+      return;
     }
 
-    const updatedPost = data.post;
-    if (updatedPost) {
-      applyPostUpdate(updatedPost);
-
-      setInteractions((prev) => {
-        const prevState = prev[id] || {
-          upvoted: false,
-          downvoted: false,
-          bookmarked: false,
-        };
-
-        const bookmarked = isUserInArray(
-          updatedPost.bookmarkedBy,
-          currentUser._id
-        );
-
-        return {
-          ...prev,
-          [id]: {
-            ...prevState,
-            bookmarked,
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/forum/posts/${id}/bookmark`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
           },
-        };
-      });
+          body: JSON.stringify({ userId }),
+        }
+      );
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || `Bookmark failed: ${res.status}`);
+      }
+
+      const updatedPost = data.post;
+      if (updatedPost) {
+        applyPostUpdate(updatedPost);
+
+        setInteractions((prev) => {
+          const prevState = prev[id] || {
+            upvoted: false,
+            downvoted: false,
+            bookmarked: false,
+          };
+
+          const bookmarked = isUserInArray(
+            updatedPost.bookmarkedBy,
+            userId
+          );
+
+          return {
+            ...prev,
+            [id]: { ...prevState, bookmarked },
+          };
+        });
+      }
+    } catch (err) {
+      console.error("Failed to bookmark:", err);
+      alert(err.message || "Failed to bookmark");
     }
-  } catch (err) {
-    console.error("Failed to bookmark:", err);
-    alert(err.message || "Failed to bookmark");
-  }
-};
+  };
 
-
-  // 搜索过滤
+  // 搜索过滤（只在知识贴中搜）
   const filteredPosts = useMemo(() => {
     if (!search.trim()) return posts;
     const q = search.toLowerCase();
     return posts.filter(
       (p) =>
-        p.title.toLowerCase().includes(q) || p.content.toLowerCase().includes(q)
+        (p.title || "").toLowerCase().includes(q) ||
+        (p.content || "").toLowerCase().includes(q)
     );
   }, [posts, search]);
+
+  // 选择图片
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) setNewFile(file);
+  };
+
+  // 发布新知识贴
+  const handleCreatePost = async () => {
+    if (!userId) {
+      alert("请先登录再发帖");
+      return;
+    }
+    if (!newBody.trim()) {
+      alert("Body text is required");
+      return;
+    }
+
+    try {
+      setPosting(true);
+
+      const formData = new FormData();
+      // 后端 schema 要求 title 必填，所以如果用户没写，就给一个默认标题
+      const safeTitle = newTitle.trim() || "Untitled post";
+      formData.append("title", safeTitle);
+      formData.append("content", newBody.trim());
+      formData.append("userId", userId);
+      formData.append("source", "manual"); // 区分于 checkin
+      formData.append("isKnowledge", "true");
+      if (newCategories.trim()) {
+        formData.append("categories", newCategories.trim());
+      }
+      if (newFile) {
+        formData.append("image", newFile); // 和后端 multer 字段名保持一致
+      }
+
+      const res = await fetch(`${API_BASE_URL}/forum/posts`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        console.error("Create post failed:", data);
+        alert("Failed to create post. Please try again.");
+        setPosting(false);
+        return;
+      }
+
+      // 不依赖返回内容，直接重新拉一次列表，保证前端状态干净
+      await fetchPosts();
+
+      setPosting(false);
+      setCreateOpen(false);
+      setNewTitle("");
+      setNewBody("");
+      setNewCategories("");
+      setNewFile(null);
+    } catch (err) {
+      console.error("Error creating post:", err);
+      alert("Network error. Please try again.");
+      setPosting(false);
+    }
+  };
 
   return (
     <Box
@@ -280,7 +347,7 @@ const handleToggleBookmark = async (id) => {
         bgcolor: "#F2F2F2",
       }}
     >
-      {/* 顶部搜索栏 */}
+      {/* 顶部：搜索 + 发帖按钮 */}
       <Box
         sx={{
           px: { xs: 2, md: 4 },
@@ -289,33 +356,53 @@ const handleToggleBookmark = async (id) => {
           bgcolor: "#F2F2F2",
         }}
       >
-        <TextField
-          fullWidth
-          placeholder="Search for the post..."
-          variant="outlined"
-          size="small"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          InputProps={{
-            endAdornment: (
-              <InputAdornment position="end">
-                <SearchIcon sx={{ color: "#ffffff" }} />
-              </InputAdornment>
-            ),
-            sx: {
-              bgcolor: "#5E7D28",
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Box sx={{ flex: 1 }}>
+            <TextField
+              fullWidth
+              placeholder="Search for a knowledge post..."
+              variant="outlined"
+              size="small"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <SearchIcon sx={{ color: "#ffffff" }} />
+                  </InputAdornment>
+                ),
+                sx: {
+                  bgcolor: "#5E7D28",
+                  borderRadius: 999,
+                  color: "#FFFFFF",
+                  px: 2,
+                  "& .MuiOutlinedInput-notchedOutline": {
+                    border: "none",
+                  },
+                  "& input::placeholder": {
+                    color: "rgba(255,255,255,0.85)",
+                  },
+                },
+              }}
+            />
+          </Box>
+
+          <Button
+            variant="contained"
+            size="small"
+            startIcon={<AddIcon sx={{ fontSize: 18 }} />}
+            onClick={() => setCreateOpen(true)}
+            sx={{
+              textTransform: "none",
               borderRadius: 999,
-              color: "#FFFFFF",
-              px: 2,
-              "& .MuiOutlinedInput-notchedOutline": {
-                border: "none",
-              },
-              "& input::placeholder": {
-                color: "rgba(255,255,255,0.85)",
-              },
-            },
-          }}
-        />
+              bgcolor: "#5E7D28",
+              "&:hover": { bgcolor: "#46611F" },
+              whiteSpace: "nowrap",
+            }}
+          >
+            New post
+          </Button>
+        </Stack>
       </Box>
 
       {/* 列表区域 */}
@@ -346,15 +433,25 @@ const handleToggleBookmark = async (id) => {
               downvoted: false,
               bookmarked: false,
             };
+
+            // 计算 Good Post（用于传给卡片，卡片里可以显示一个 tag）
+            const isGoodPost =
+              (p.upvotes ?? 0) >= 5 ||
+              (p.bookmarks ?? 0) >= 3 ||
+              (p.comments?.length ?? 0) >= 3;
+
             return (
               <ForumPostCard
                 key={p._id}
                 title={p.title}
                 content={p.content}
                 hasMedia={p.hasMedia}
-                // 新增：把作者和点赞数传给卡片
+                imageUrl={p.imageUrl} // 如果你在 ForumPostCard 里支持图片，可以用它
                 authorName={p.authorName || "Anonymous"}
                 upvotesCount={p.upvotes ?? 0}
+                downvotesCount={p.downvotes ?? 0}
+                bookmarksCount={p.bookmarks ?? 0}
+                isGoodPost={isGoodPost}
                 // 交互状态
                 upvoted={state.upvoted}
                 downvoted={state.downvoted}
@@ -365,18 +462,18 @@ const handleToggleBookmark = async (id) => {
                 onCardClick={() => handleCardClick(p)}
               />
             );
-          })}
+          }}
 
         {!loading && !loadingError && filteredPosts.length === 0 && (
           <Typography variant="body2" sx={{ color: "#6B7280", mt: 2 }}>
-            No posts found. Try a different keyword.
+            No knowledge posts yet. Be the first to share your experience!
           </Typography>
         )}
       </Box>
 
       <BottomNavBar />
 
-      {/* 帖子详情弹窗 */}
+      {/* 帖子详情弹窗（简单保留，之后可以加评论） */}
       <Dialog
         open={!!selectedPost}
         onClose={handleCloseDialog}
@@ -389,23 +486,106 @@ const handleToggleBookmark = async (id) => {
             {selectedPost?.content}
           </Typography>
           {selectedPost?.hasMedia && (
-            <Box sx={{ display: "flex", gap: 1.2, mt: 2 }}>
-              {[0, 1, 2].map((i) => (
-                <Box
-                  key={i}
-                  sx={{
-                    flex: 1,
-                    height: 80,
-                    borderRadius: 2,
-                    bgcolor: "#DDDDDD",
-                  }}
-                />
-              ))}
+            <Box
+              sx={{
+                mt: 2,
+                height: 160,
+                borderRadius: 2,
+                bgcolor: "#DDDDDD",
+              }}
+            >
+              {/* 你可以在这里加图片 / 视频展示 */}
             </Box>
           )}
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseDialog}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 发表知识贴弹窗 */}
+      <Dialog
+        open={createOpen}
+        onClose={() => !posting && setCreateOpen(false)}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Share your life skill</DialogTitle>
+        <DialogContent dividers>
+          <Typography
+            variant="body2"
+            sx={{ color: "#6B7280", mb: 1.5 }}
+          >
+            Tell others what worked for you. Steps, tips, or even what
+            failed.
+          </Typography>
+
+          <TextField
+            label="Title (optional)"
+            fullWidth
+            margin="dense"
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+          />
+
+          <TextField
+            label="Body *"
+            fullWidth
+            margin="dense"
+            multiline
+            minRows={4}
+            value={newBody}
+            onChange={(e) => setNewBody(e.target.value)}
+            helperText="Share your experience, steps, what worked/failed."
+          />
+
+          <TextField
+            label="Categories (optional)"
+            fullWidth
+            margin="dense"
+            placeholder="e.g. cooking, cleaning, budgeting"
+            value={newCategories}
+            onChange={(e) => setNewCategories(e.target.value)}
+            helperText="Comma-separated tags, like 'cooking, budgeting'"
+          />
+
+          <Box sx={{ mt: 2, display: "flex", alignItems: "center", gap: 2 }}>
+            <Button
+              variant="outlined"
+              startIcon={<PhotoCameraIcon />}
+              component="label"
+              size="small"
+            >
+              Add photo / video
+              <input
+                type="file"
+                accept="image/*,video/*"
+                hidden
+                onChange={handleFileChange}
+              />
+            </Button>
+
+            {newFile && (
+              <Typography variant="caption" sx={{ color: "#4B5563" }}>
+                {newFile.name}
+              </Typography>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setCreateOpen(false)}
+            disabled={posting}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleCreatePost}
+            variant="contained"
+            disabled={posting || !newBody.trim()}
+          >
+            {posting ? "Posting..." : "Post"}
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>
