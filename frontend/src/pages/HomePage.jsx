@@ -24,12 +24,6 @@ import BottomNavBar from "../components/BottomNavBar.jsx";
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
 
-const rankingData = [
-  { rank: 13, value: 45, color: "#AEB7FF" },
-  { rank: 14, value: 41, color: "#E7FF90" },
-  { rank: 15, value: 32, color: "#AEB7FF" },
-];
-
 // 系统内置 goal（不依赖数据库）
 const systemGoals = [
   {
@@ -236,7 +230,7 @@ function HomePage() {
 
   const [activeGoalId, setActiveGoalId] = useState(null);
   const [checkInNote, setCheckInNote] = useState("");
-  const [checkInImage, setCheckInImage] = useState(null); // ⭐ 新增：图片
+  const [checkInImage, setCheckInImage] = useState(null); // 图片文件
   const [posting, setPosting] = useState(false);
 
   const activeGoal = goals.find((g) => g.id === activeGoalId) || null;
@@ -280,7 +274,6 @@ function HomePage() {
         }));
 
         setGoals((prev) => {
-          // 保留系统 goal + 覆盖/合并挑战 goal
           const system = prev.filter((g) => g.isSystem);
           return [...system, ...challengeGoals];
         });
@@ -312,7 +305,7 @@ function HomePage() {
     if (file) setCheckInImage(file);
   };
 
-  // Check in：对系统 goal，用 Forum；对 challenge goal，走 /challenges/:id/checkin
+  // Check in：对系统 goal，用 Forum；对 challenge goal，调用 /challenges/:id/checkin
   const handleConfirmCheckIn = async () => {
     if (!activeGoalId || !checkInNote.trim()) return;
     const goal = goals.find((g) => g.id === activeGoalId);
@@ -353,7 +346,6 @@ function HomePage() {
 
         const { userChallenge } = await res.json();
 
-        // 用返回的 userChallenge 更新对应 goal
         setGoals((prev) =>
           prev.map((g) => {
             if (g.id !== activeGoalId) return g;
@@ -367,6 +359,12 @@ function HomePage() {
         );
       } else {
         // 系统 goal：用 Forum 发一条帖（multipart）
+        if (!userId) {
+          alert("User missing.");
+          setPosting(false);
+          return;
+        }
+
         const formData = new FormData();
         formData.append("title", goal.title);
         formData.append("content", checkInNote);
@@ -376,10 +374,17 @@ function HomePage() {
           formData.append("image", checkInImage);
         }
 
-        await fetch(`${API_BASE_URL}/forum/posts`, {
+        const res = await fetch(`${API_BASE_URL}/forum/posts`, {
           method: "POST",
           body: formData,
         });
+
+        if (!res.ok) {
+          console.error("Forum post failed:", res.status);
+          alert("Failed to post progress. Please try again.");
+          setPosting(false);
+          return;
+        }
 
         setGoals((prev) =>
           prev.map((g) => {
@@ -438,9 +443,19 @@ function HomePage() {
           Hello, {displayName}!
         </Typography>
 
-        {/* 你之前注释掉的 ranking 区域，照旧保留注释 */}
-        {/* <Typography ...>Weekly ranking &gt;</Typography> */}
-        {/* {rankingData.map((r) => (
+        {/* ranking 部分你之前是注释掉的，可以按需恢复 */}
+        {/* <Typography
+          variant="body2"
+          sx={{
+            color: "rgba(255,255,255,0.9)",
+            fontWeight: 500,
+            mb: 1,
+            fontSize: 13,
+          }}
+        >
+          Weekly ranking &gt;
+        </Typography>
+        {rankingData.map((r) => (
           <RankingRow key={r.rank} {...r} />
         ))} */}
       </Box>
