@@ -1,4 +1,3 @@
-// backend/src/models/ForumPost.js
 import mongoose from "mongoose";
 
 const ForumPostSchema = new mongoose.Schema(
@@ -6,6 +5,12 @@ const ForumPostSchema = new mongoose.Schema(
     title: { type: String, required: true },
     content: { type: String, required: true },
     hasMedia: { type: Boolean, default: false },
+
+    // 上传的图片地址（单张）
+    imageUrl: {
+      type: String,
+      default: null,
+    },
 
     // 发帖人
     author: {
@@ -28,16 +33,16 @@ const ForumPostSchema = new mongoose.Schema(
       default: null,
     },
 
-    // 点赞 / 点踩 / 收藏
+    // 按用户存储点赞 / 点踩 / 收藏
     upvotedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     downvotedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     bookmarkedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
 
-    // ⭐ 评论列表
+    // 评论
     comments: [
       {
         _id: false,
-        id: String, // 简单字符串 id（时间戳）
+        id: String,
         user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
         text: String,
         createdAt: { type: Date, default: Date.now },

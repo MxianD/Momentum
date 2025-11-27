@@ -1,7 +1,8 @@
-// src/index.js
 import express from "express";
 import cors from "cors";
 import mongoose from "mongoose";
+import path from "path";
+import { fileURLToPath } from "url";
 import "dotenv/config";
 
 import forumRoutes from "./routes/forumRoutes.js";
@@ -11,17 +12,20 @@ import challengeRoutes from "./routes/challengeRoutes.js";
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// 处理 __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 // 中间件
 const allowedOrigins = [
-  "http://localhost:5173",              // Vite 本地开发
-  "http://localhost:3000",              // 如果你曾用过 3000
-  "https://momentumfrontend.netlify.app", // 你的前端线上地址
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "https://momentumfrontend.netlify.app",
 ];
 
 app.use(
   cors({
     origin(origin, callback) {
-      // Postman / curl / 同源请求时 origin 可能为 undefined，所以也放行
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
@@ -34,8 +38,13 @@ app.use(
   })
 );
 
-// ⭐⭐ 这行是关键：解析 JSON body
 app.use(express.json());
+
+// ⭐ 暴露上传目录：访问 /uploads/xxx.png
+app.use(
+  "/uploads",
+  express.static(path.join(__dirname, "../uploads"))
+);
 
 // 健康检查
 app.get("/api/health", (req, res) => {
@@ -47,17 +56,14 @@ app.use("/api/forum", forumRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/challenges", challengeRoutes);
 
-// 很简单的根路径，防止看到 Cannot GET /
 app.get("/", (req, res) => {
   res.send("Momentum backend is running 🚀");
 });
 
-// 健康检查接口
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
-// 连接数据库并启动服务器
 mongoose
   .connect(process.env.MONGODB_URI)
   .then(() => {

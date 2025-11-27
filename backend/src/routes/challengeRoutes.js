@@ -1,10 +1,12 @@
-// src/routes/challengeRoutes.js
 import express from "express";
+import multer from "multer";
+import path from "path";
 import Challenge from "../models/Challenge.js";
 import UserChallenge from "../models/UserChallenge.js";
 import ForumPost from "../models/ForumPost.js";
 
 const router = express.Router();
+
 function isSameDay(d1, d2) {
   return (
     d1.getFullYear() === d2.getFullYear() &&
@@ -13,7 +15,21 @@ function isSameDay(d1, d2) {
   );
 }
 
-// GET /api/challenges/friends   获取“朋友之间的挑战”
+/** ---------- 上传配置（和 forumRoutes 一样） ---------- */
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, "uploads/");
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, unique + ext);
+  },
+});
+const upload = multer({ storage });
+
+// GET /api/challenges/friends
 router.get("/friends", async (req, res) => {
   try {
     const challenges = await Challenge.find({ type: "friend" }).sort({
@@ -39,12 +55,11 @@ router.get("/joined/:userId", async (req, res) => {
       const obj = uc.toObject();
 
       const last = obj.lastCheckInAt ? new Date(obj.lastCheckInAt) : null;
-      const checkedInToday =
-        last && isSameDay(last, today);  // 用 lastCheckInAt 判断今天是否已打卡
+      const checkedInToday = last && isSameDay(last, today);
 
       return {
         ...obj,
-        checkedInToday,  // 覆盖掉数据库里的布尔值，用“计算出来的今天状态”
+        checkedInToday,
       };
     });
 
@@ -55,8 +70,7 @@ router.get("/joined/:userId", async (req, res) => {
   }
 });
 
-
-// POST /api/challenges/:id/join   用户加入某个 challenge
+// POST /api/challenges/:id/join
 router.post("/:id/join", async (req, res) => {
   try {
     const { id } = req.params; // challengeId
@@ -71,7 +85,6 @@ router.post("/:id/join", async (req, res) => {
       return res.status(404).json({ error: "Challenge not found" });
     }
 
-    // 如果已存在则直接返回
     let uc = await UserChallenge.findOne({
       user: userId,
       challenge: id,
@@ -92,8 +105,8 @@ router.post("/:id/join", async (req, res) => {
   }
 });
 
-// POST /api/challenges/:id/checkin   用户对某个 challenge 打卡
-router.post("/:id/checkin", async (req, res) => {
+// POST /api/challenges/:id/checkin   用户对某个 challenge 打卡（可带图片）
+router.post("/:id/checkin", upload.single("image"), async (req, res) => {
   try {
     const { id } = req.params; // challengeId
     const { userId, note } = req.body;
@@ -109,6 +122,8 @@ router.post("/:id/checkin", async (req, res) => {
       return res.status(404).json({ error: "Challenge not found" });
     }
 
+    const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
+
     let uc = await UserChallenge.findOne({
       user: userId,
       challenge: id,
@@ -117,7 +132,6 @@ router.post("/:id/checkin", async (req, res) => {
     const now = new Date();
 
     if (!uc) {
-      // 第一次加入+打卡
       uc = await UserChallenge.create({
         user: userId,
         challenge: id,
@@ -130,25 +144,20 @@ router.post("/:id/checkin", async (req, res) => {
       const last = uc.lastCheckInAt ? new Date(uc.lastCheckInAt) : null;
 
       if (last && isSameDay(last, now)) {
-        // 已经是今天打过卡了 → 不重复加 streak
-        // 你可以选择直接返回当前数据
         return res.json({
           userChallenge: await uc.populate("challenge"),
-          forumPost: null, // 或者不再发新帖子
+          forumPost: null,
         });
       }
 
-      // 计算 last 到现在相差几天
       let newStreak = 1;
       if (last) {
         const diffMs = now - last;
         const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
         if (diffDays === 1) {
-          // 昨天也打卡了 → 连续
           newStreak = uc.streak + 1;
         } else {
-          // 中间断了（diffDays >= 2）或者别的情况 → streak 重新从 1 开始
           newStreak = 1;
         }
       }
@@ -162,11 +171,11 @@ router.post("/:id/checkin", async (req, res) => {
 
     uc = await uc.populate("challenge");
 
-    // Forum 发帖逻辑保持不变
     const post = await ForumPost.create({
       title: challenge.title,
       content: note,
-      hasMedia: false,
+      hasMedia: !!imageUrl,
+      imageUrl,
       source: "checkin",
       author: userId,
       challenge: challenge._id,
@@ -182,6 +191,7 @@ router.post("/:id/checkin", async (req, res) => {
   }
 });
 
+// 创建 challenge
 router.post("/create", async (req, res) => {
   try {
     const { title, description, time, type } = req.body;
@@ -196,7 +206,7 @@ router.post("/create", async (req, res) => {
       title,
       description,
       time,
-      type: type || "recommended", // 默认标记为 recommended
+      type: type || "recommended",
     });
 
     res.json({ success: true, challenge });
@@ -205,4 +215,5 @@ router.post("/create", async (req, res) => {
     res.status(500).json({ error: "Failed to create challenge" });
   }
 });
+
 export default router;
