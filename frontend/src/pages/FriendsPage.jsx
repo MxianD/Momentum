@@ -1,282 +1,190 @@
 // src/pages/FriendsPage.jsx
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import {
   Box,
-  Paper,
   Typography,
+  Paper,
   Stack,
   Avatar,
-  IconButton,
   TextField,
+  IconButton,
   Divider,
+  Chip,
 } from "@mui/material";
 
-import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import FavoriteBorderIcon from "@mui/icons-material/FavoriteBorder";
-import FavoriteIcon from "@mui/icons-material/Favorite";
 import SendIcon from "@mui/icons-material/Send";
 
 import BottomNavBar from "../components/BottomNavBar.jsx";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
-
-// 把 /api 去掉，得到后端根域名，用来拼接图片 URL
 const API_ORIGIN = API_BASE_URL.replace(/\/api$/, "");
 
-// 单个帖子卡片
-function FriendPostCard({
-  content,
-  authorName,
-  imageUrl,
-  hasMedia,
-  liked,
-  likeCount,
-  commentValue,
-  comments,
-  onChangeComment,
-  onLike,
-  onSubmitComment,
-}) {
-  const handleKeyDown = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      onSubmitComment();
-    }
-  };
+/**
+ * 判断 post 是否有有效的 category：
+ * - categories 为数组，长度 > 0
+ * - 或为字符串，拆分后有至少一个非空 tag
+ */
+function hasValidCategory(post) {
+  const c = post.categories;
+  if (!c) return false;
+  if (Array.isArray(c)) return c.length > 0;
+  if (typeof c === "string") {
+    const tags = c
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
+    return tags.length > 0;
+  }
+  return false;
+}
 
-  return (
-    <Paper
-      elevation={0}
-      sx={{
-        flex: 1,
-        mb: 2,
-        borderRadius: 2,
-        overflow: "hidden",
-        bgcolor: "#FFFFFF",
-        border: "1px solid #E5E7EB",
-      }}
-    >
-      {/* 图片区域：有 imageUrl 就显示真实图片，否则按 hasMedia 显示灰框 */}
-      {imageUrl ? (
-        <Box
-          component="img"
-          src={`${API_ORIGIN}${imageUrl}`}
-          alt="post media"
-          sx={{
-            width: "100%",
-            height: 130,
-            objectFit: "cover",
-            display: "block",
-            bgcolor: "#E5E5E5",
-          }}
-        />
-      ) : hasMedia ? (
-        <Box
-          sx={{
-            height: 130,
-            bgcolor: "#E5E5E5",
-          }}
-        />
-      ) : null}
+/**
+ * 从 post 上提取 category tags（字符串数组），用于展示 chip
+ */
+function extractCategoryTags(post) {
+  const c = post.categories;
+  if (!c) return [];
+  if (Array.isArray(c)) return c;
+  if (typeof c === "string") {
+    return c
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
 
-      <Box sx={{ px: 1.8, pt: 1.2, pb: 1.4 }}>
-        <Stack direction="row" justifyContent="space-between" mb={1}>
-          <Typography
-            variant="body2"
-            sx={{ fontWeight: 500, color: "#111827" }}
-          >
-            {content}
-          </Typography>
-          <Avatar
-            sx={{
-              width: 28,
-              height: 28,
-              bgcolor: "#111827",
-              fontSize: 12,
-            }}
-          >
-            {authorName?.[0] || "A"}
-          </Avatar>
-        </Stack>
+/**
+ * 把帖子按日期分组，posts 已经是按时间升序排序
+ * 返回形如 [{ dateLabel: 'Nov 27', posts: [] }, ...]
+ */
+function groupPostsByDay(posts) {
+  const map = new Map();
 
-        {/* 已有评论列表 */}
-        {comments && comments.length > 0 && (
-          <>
-            <Divider sx={{ mb: 1, mt: 0.5 }} />
-            <Stack spacing={0.5} sx={{ mb: 1 }}>
-              {comments.map((c) => (
-                <Box key={c.id}>
-                  <Typography
-                    variant="caption"
-                    sx={{ fontWeight: 600, color: "#111827", mr: 0.5 }}
-                  >
-                    {c.authorName || "You"}:
-                  </Typography>
-                  <Typography
-                    component="span"
-                    variant="caption"
-                    sx={{ color: "#4B5563" }}
-                  >
-                    {c.text}
-                  </Typography>
-                </Box>
-              ))}
-            </Stack>
-          </>
-        )}
+  posts.forEach((p) => {
+    const d = p.createdAt ? new Date(p.createdAt) : new Date();
+    const label = d.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    }); // e.g. "Nov 27"
 
-        <Stack direction="row" alignItems="center" spacing={1.5}>
-          <IconButton
-            size="small"
-            onClick={onLike}
-            sx={{
-              p: 0,
-            }}
-          >
-            {liked ? (
-              <FavoriteIcon sx={{ fontSize: 20, color: "#EC4899" }} />
-            ) : (
-              <FavoriteBorderIcon sx={{ fontSize: 20, color: "#EC4899" }} />
-            )}
-          </IconButton>
-          <Typography variant="caption" sx={{ color: "#6B7280", width: 20 }}>
-            {likeCount}
-          </Typography>
+    if (!map.has(label)) map.set(label, []);
+    map.get(label).push(p);
+  });
 
-          <Box sx={{ flex: 1, display: "flex", alignItems: "center" }}>
-            <TextField
-              size="small"
-              placeholder="Comment..."
-              value={commentValue}
-              onChange={(e) => onChangeComment(e.target.value)}
-              onKeyDown={handleKeyDown}
-              fullWidth
-              InputProps={{
-                sx: {
-                  borderRadius: 999,
-                  fontSize: 12,
-                  bgcolor: "#FFFFFF",
-                  "& .MuiOutlinedInput-notchedOutline": {
-                    borderColor: "#7E9B3C",
-                  },
-                  pr: 0,
-                },
-              }}
-            />
-            <IconButton
-              size="small"
-              onClick={onSubmitComment}
-              sx={{ ml: 0.5 }}
-            >
-              <SendIcon sx={{ fontSize: 18, color: "#7E9B3C" }} />
-            </IconButton>
-          </Box>
-        </Stack>
-      </Box>
-    </Paper>
-  );
+  const result = Array.from(map.entries()).map(([dateLabel, list]) => ({
+    dateLabel,
+    posts: list,
+  }));
+
+  // 根据每组第一条 post 的时间，从早到晚排序
+  result.sort((a, b) => {
+    const t1 = a.posts[0].createdAt
+      ? new Date(a.posts[0].createdAt).getTime()
+      : 0;
+    const t2 = b.posts[0].createdAt
+      ? new Date(b.posts[0].createdAt).getTime()
+      : 0;
+    return t1 - t2; // earliest first
+  });
+
+  return result;
 }
 
 function FriendsPage() {
   const [currentUser, setCurrentUser] = useState(null);
-  const [feed, setFeed] = useState([]);
-  const [commentDrafts, setCommentDrafts] = useState({});
+  const [friends, setFriends] = useState([]);
+  const [posts, setPosts] = useState([]);
+  const [commentDrafts, setCommentDrafts] = useState({}); // 每个 postId → 当前输入的评论
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  // 读取当前用户
+  // 读当前用户
   useEffect(() => {
     try {
       const saved = localStorage.getItem("momentumUser");
       if (saved) setCurrentUser(JSON.parse(saved));
     } catch (e) {
-      console.error("Failed to parse user", e);
+      console.error("Failed to parse user from localStorage", e);
     }
   }, []);
 
   const userId = currentUser?._id;
 
-  // 拉取【自己 + 好友】的帖子，按时间从早到晚
+  // 加载好友列表 + 所有帖子，然后在前端过滤
   useEffect(() => {
     if (!userId) return;
 
-    const loadPosts = async () => {
+    const fetchData = async () => {
       try {
-        const res = await fetch(
-          `${API_BASE_URL}/forum/posts/friends/${userId}`
-        );
-        if (!res.ok) {
-          console.error("Failed to load friends posts");
-          return;
+        setLoading(true);
+        setError("");
+
+        const [friendsRes, postsRes] = await Promise.all([
+          fetch(`${API_BASE_URL}/users/${userId}/friends`),
+          fetch(`${API_BASE_URL}/forum/posts`),
+        ]);
+
+        const friendsData = await friendsRes.json().catch(() => ({}));
+        const postsData = await postsRes.json().catch(() => []);
+
+        if (!friendsRes.ok) {
+          console.error("Failed to fetch friends:", friendsData);
         }
-        const data = await res.json();
+        if (!postsRes.ok) {
+          console.error("Failed to fetch posts:", postsData);
+          throw new Error("Posts request failed");
+        }
 
-        // 按 createdAt 降序（最早在上面）
-        const sorted = [...data].sort((a, b) => {
-          const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-          const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-          return db - da;
-        });
+        // 好友列表（格式可能是 {friends: []} 或直接数组，这里都兼容一下）
+        const friendsList = Array.isArray(friendsData.friends)
+          ? friendsData.friends
+          : Array.isArray(friendsData)
+          ? friendsData
+          : [];
+        setFriends(friendsList);
 
-        const normalized = sorted.map((p) => {
-          const created = p.createdAt ? new Date(p.createdAt) : new Date();
-          const dateLabel = created.toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
+        const friendIds = new Set(friendsList.map((f) => f._id));
+
+        // 过滤规则：
+        // 1. 只要 checkin 帖子：p.source === "checkin"
+        // 2. 作者必须是自己或好友
+        // 3. 必须有 category
+        const visiblePosts = (postsData || [])
+          .filter((p) => p.source === "checkin") // ⭐ 只要 checkin
+          .filter(hasValidCategory) // ⭐ 有 category 才展示
+          .filter((p) => {
+            const a = p.author;
+            const authorId =
+              typeof a === "string" ? a : a?._id || a?.id || null;
+            if (!authorId) return false;
+            return authorId === userId || friendIds.has(authorId);
+          })
+          // 时间从早到晚
+          .sort((a, b) => {
+            const t1 = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+            const t2 = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+            return t1 - t2;
           });
 
-          return {
-            ...p,
-            id: p._id,
-            dateLabel,
-            likeCount: p.upvotes ?? 0,
-          };
-        });
-
-        setFeed(normalized);
+        setPosts(visiblePosts);
       } catch (err) {
-        console.error("Failed to load friends posts", err);
+        console.error("Error loading friends/posts for FriendsPage:", err);
+        setError("Failed to load posts from you and your friends.");
+      } finally {
+        setLoading(false);
       }
     };
 
-    loadPosts();
+    fetchData();
   }, [userId]);
 
-  const handleToggleLike = async (postId) => {
-    if (!userId) return;
+  // 分组：按日期
+  const grouped = useMemo(() => groupPostsByDay(posts), [posts]);
 
-    try {
-      const res = await fetch(
-        `${API_BASE_URL}/forum/posts/${postId}/upvote`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId }),
-        }
-      );
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        console.error("Failed to upvote:", data);
-        return;
-      }
-
-      setFeed((prev) =>
-        prev.map((p) =>
-          p.id === postId
-            ? {
-                ...data.post,
-                id: data.post._id,
-                dateLabel: p.dateLabel,
-                likeCount: data.post.upvotes ?? 0,
-              }
-            : p
-        )
-      );
-    } catch (err) {
-      console.error("Failed to toggle like", err);
-    }
-  };
-
-  const handleChangeComment = (postId, value) => {
+  const handleCommentChange = (postId, value) => {
     setCommentDrafts((prev) => ({ ...prev, [postId]: value }));
   };
 
@@ -290,202 +198,386 @@ function FriendsPage() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId,
-            text,
-          }),
+          body: JSON.stringify({ userId, text }),
         }
       );
-
       const data = await res.json();
       if (!res.ok || !data.success) {
         console.error("Failed to send comment:", data);
+        alert("Failed to send comment.");
         return;
       }
 
-      setFeed((prev) =>
-        prev.map((p) =>
-          p.id === postId
-            ? {
-                ...data.post,
-                id: data.post._id,
-                dateLabel: p.dateLabel,
-                likeCount: data.post.upvotes ?? 0,
-              }
-            : p
-        )
-      );
-
+      const updatedPost = data.post;
+      if (updatedPost) {
+        setPosts((prev) =>
+          prev.map((p) => (p._id === updatedPost._id ? updatedPost : p))
+        );
+      }
       setCommentDrafts((prev) => ({ ...prev, [postId]: "" }));
     } catch (err) {
-      console.error("Failed to send comment", err);
+      console.error("Error sending comment:", err);
+      alert("Network error. Please try again.");
     }
   };
-
-  // 根据 dateLabel 分组（顺序保持 sorted 后的顺序：最早日期在上）
-  const grouped = feed.reduce((acc, post) => {
-    const key = post.dateLabel || "Recent";
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(post);
-    return acc;
-  }, {});
-  const dateSections = Object.entries(grouped);
 
   return (
     <Box
       sx={{
         minHeight: "100vh",
+        bgcolor: "#F2F2F2",
         display: "flex",
         flexDirection: "column",
       }}
     >
-      {/* 顶部绿色区域 */}
+      {/* 顶部绿色标题条 */}
       <Box
         sx={{
           bgcolor: "#516E1F",
           color: "#FFFFFF",
           px: { xs: 2, md: 4 },
           pt: { xs: 3, md: 4 },
-          pb: { xs: 2.5, md: 3 },
+          pb: { xs: 2, md: 3 },
           borderBottomLeftRadius: { xs: 24, md: 32 },
           borderBottomRightRadius: { xs: 24, md: 32 },
           boxShadow: "0 12px 25px rgba(0,0,0,0.25)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
         }}
       >
         <Typography
           variant="h6"
-          sx={{
-            fontWeight: 700,
-            fontSize: 22,
-          }}
+          sx={{ fontWeight: 700, fontSize: 22, mb: 0.5 }}
         >
           Friends
         </Typography>
-
-        <IconButton
-          size="small"
-          sx={{
-            color: "#FFFFFF",
-          }}
+        <Typography
+          variant="body2"
+          sx={{ color: "rgba(255,255,255,0.85)", fontSize: 13 }}
         >
-          <MenuRoundedIcon />
-        </IconButton>
+          See check-ins from you and your friends
+        </Typography>
       </Box>
 
-      {/* 中间内容：时间线 + 卡片 */}
+      {/* 时间线 + 卡片 */}
       <Box
         sx={{
           flexGrow: 1,
-          bgcolor: "#F2F2F2",
           px: { xs: 2, md: 4 },
           pt: 2,
           pb: 8,
         }}
       >
-        {dateSections.length === 0 ? (
+        {loading && (
+          <Typography variant="body2" sx={{ mt: 2 }}>
+            Loading check-ins...
+          </Typography>
+        )}
+
+        {!loading && error && (
           <Typography
             variant="body2"
-            sx={{ color: "#6B7280", mt: 2, textAlign: "center" }}
+            sx={{ mt: 2, color: "#EF4444" }}
           >
-            No activity from you or your friends yet.
+            {error}
           </Typography>
-        ) : (
-          dateSections.map(([dateLabel, posts]) => (
-            <Box key={dateLabel} sx={{ mb: 2.5 }}>
-              {/* 日期标题 */}
-              <Typography
-                variant="body2"
+        )}
+
+        {!loading && !error && grouped.length === 0 && (
+          <Typography
+            variant="body2"
+            sx={{ mt: 2, color: "#6B7280" }}
+          >
+            No check-ins with categories yet. Start a challenge and tag
+            your posts!
+          </Typography>
+        )}
+
+        {!loading &&
+          !error &&
+          grouped.map((group, groupIdx) => (
+            <Box
+              key={group.dateLabel}
+              sx={{ display: "flex", alignItems: "flex-start", mb: 3 }}
+            >
+              {/* 左侧时间线 */}
+              <Box
                 sx={{
-                  fontWeight: 600,
-                  color: "#111827",
-                  mb: 1.2,
+                  width: 40,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
                 }}
               >
-                {dateLabel}
-              </Typography>
+                {/* 日期 */}
+                <Typography
+                  variant="body2"
+                  sx={{
+                    fontWeight: 600,
+                    color: "#111827",
+                    mb: 1,
+                  }}
+                >
+                  {group.dateLabel}
+                </Typography>
 
-              {posts.map((post, index) => {
-                const isLast = index === posts.length - 1;
+                {/* 圆点 */}
+                <Box
+                  sx={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: "50%",
+                    border: "2px solid #4B5563",
+                    bgcolor: "#F2F2F2",
+                  }}
+                />
 
-                const comments = (post.comments || []).map((c) => ({
-                  id: c.id,
-                  authorName: c.userName || "Anonymous",
-                  text: c.text,
-                }));
-
-                const liked =
-                  !!userId &&
-                  (post.upvotedBy || []).some((u) => {
-                    const val = u?._id || u;
-                    return val.toString() === userId;
-                  });
-
-                return (
+                {/* 竖虚线 */}
+                {groupIdx < grouped.length - 1 && (
                   <Box
-                    key={post.id}
                     sx={{
-                      display: "flex",
-                      alignItems: "stretch",
+                      flexGrow: 1,
+                      width: 2,
+                      mt: 0.5,
+                      borderRight: "2px dashed #D1D5DB",
                     }}
-                  >
-                    {/* 时间轴 */}
-                    <Box
+                  />
+                )}
+              </Box>
+
+              {/* 右侧当天所有卡片 */}
+              <Box sx={{ flexGrow: 1 }}>
+                {group.posts.map((p) => {
+                  const postId = p._id;
+                  const d = p.createdAt ? new Date(p.createdAt) : null;
+                  const timeLabel = d
+                    ? d.toLocaleTimeString("en-US", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    : "";
+                  const authorName =
+                    p.authorName ||
+                    (typeof p.author === "object" && p.author?.name) ||
+                    "Anonymous";
+
+                  const mediaSrc = p.imageUrl
+                    ? p.imageUrl.startsWith("http")
+                      ? p.imageUrl
+                      : `${API_ORIGIN}${p.imageUrl}`
+                    : null;
+
+                  const tags = extractCategoryTags(p);
+                  const comments = (p.comments || []).map((c) => ({
+                    id: c.id,
+                    authorName: c.userName || "Anonymous",
+                    text: c.text,
+                  }));
+
+                  const commentValue = commentDrafts[postId] || "";
+
+                  return (
+                    <Paper
+                      key={postId}
+                      elevation={0}
                       sx={{
-                        width: 32,
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        mr: 1,
+                        mb: 2,
+                        borderRadius: 3,
+                        overflow: "hidden",
+                        bgcolor: "#FFFFFF",
+                        border: "1px solid #E5E7EB",
                       }}
                     >
+                      {/* media */}
                       <Box
                         sx={{
-                          width: 14,
-                          height: 14,
-                          borderRadius: "50%",
-                          border: "2px solid #4B5563",
-                          bgcolor: "#FFFFFF",
-                          mb: 0.5,
+                          height: 160,
+                          bgcolor: "#E5E5E5",
+                          ...(mediaSrc && {
+                            p: 0,
+                          }),
                         }}
-                      />
-                      {!isLast && (
+                      >
+                        {mediaSrc && (
+                          <Box
+                            component="img"
+                            src={mediaSrc}
+                            alt="post media"
+                            sx={{
+                              width: "100%",
+                              height: "100%",
+                              objectFit: "cover",
+                              display: "block",
+                            }}
+                          />
+                        )}
+                      </Box>
+
+                      {/* 文本 + 作者 + 分类 tag */}
+                      <Box sx={{ px: 2, py: 1.4 }}>
+                        <Stack
+                          direction="row"
+                          justifyContent="space-between"
+                          alignItems="center"
+                          sx={{ mb: 0.5 }}
+                        >
+                          <Stack
+                            direction="row"
+                            spacing={1}
+                            alignItems="center"
+                          >
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                fontWeight: 600,
+                                color: "#111827",
+                              }}
+                            >
+                              {p.title || "Check-in"}
+                            </Typography>
+                            {timeLabel && (
+                              <Typography
+                                variant="caption"
+                                sx={{ color: "#9CA3AF" }}
+                              >
+                                {timeLabel}
+                              </Typography>
+                            )}
+                          </Stack>
+
+                          <Avatar
+                            sx={{
+                              width: 28,
+                              height: 28,
+                              bgcolor: "#111827",
+                              fontSize: 13,
+                            }}
+                          >
+                            {authorName?.[0] || "A"}
+                          </Avatar>
+                        </Stack>
+
+                        <Typography
+                          variant="body2"
+                          sx={{ color: "#4B5563", mb: 0.8 }}
+                        >
+                          {p.content}
+                        </Typography>
+
+                        {/* 分类标签 */}
+                        {tags.length > 0 && (
+                          <Stack direction="row" spacing={0.5} sx={{ mb: 0.8 }}>
+                            {tags.slice(0, 4).map((tag) => (
+                              <Chip
+                                key={tag}
+                                label={tag}
+                                size="small"
+                                sx={{
+                                  bgcolor: "#E5F2C0",
+                                  color: "#4B5563",
+                                  fontSize: 11,
+                                  height: 22,
+                                }}
+                              />
+                            ))}
+                          </Stack>
+                        )}
+
+                        {/* 点赞 + 评论输入区 */}
                         <Box
                           sx={{
-                            flexGrow: 1,
-                            borderLeft: "2px dashed #D1D5DB",
-                            mt: 0.2,
+                            display: "flex",
+                            alignItems: "center",
+                            mt: 0.5,
                           }}
-                        />
-                      )}
-                    </Box>
+                        >
+                          <Stack
+                            direction="row"
+                            alignItems="center"
+                            spacing={0.5}
+                            sx={{ mr: 1.5 }}
+                          >
+                            <FavoriteBorderIcon
+                              sx={{ fontSize: 20, color: "#EC4899" }}
+                            />
+                            <Typography
+                              variant="caption"
+                              sx={{ color: "#6B7280" }}
+                            >
+                              {p.upvotes ?? 0}
+                            </Typography>
+                          </Stack>
 
-                    {/* 帖子卡片 */}
-                    <FriendPostCard
-                      content={post.content}
-                      authorName={post.authorName}
-                      imageUrl={post.imageUrl}
-                      hasMedia={post.hasMedia}
-                      liked={liked}
-                      likeCount={post.likeCount}
-                      commentValue={commentDrafts[post.id] || ""}
-                      comments={comments}
-                      onChangeComment={(v) =>
-                        handleChangeComment(post.id, v)
-                      }
-                      onLike={() => handleToggleLike(post.id)}
-                      onSubmitComment={() =>
-                        handleSubmitComment(post.id)
-                      }
-                    />
-                  </Box>
-                );
-              })}
+                          <TextField
+                            size="small"
+                            placeholder="Comment..."
+                            value={commentValue}
+                            onChange={(e) =>
+                              handleCommentChange(postId, e.target.value)
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && !e.shiftKey) {
+                                e.preventDefault();
+                                handleSubmitComment(postId);
+                              }
+                            }}
+                            fullWidth
+                            InputProps={{
+                              sx: {
+                                borderRadius: 999,
+                                fontSize: 12,
+                                bgcolor: "#FFFFFF",
+                                "& .MuiOutlinedInput-notchedOutline": {
+                                  borderColor: "#7E9B3C",
+                                },
+                                pr: 0,
+                              },
+                            }}
+                          />
+                          <IconButton
+                            size="small"
+                            onClick={() => handleSubmitComment(postId)}
+                            sx={{ ml: 0.5 }}
+                          >
+                            <SendIcon
+                              sx={{ fontSize: 18, color: "#7E9B3C" }}
+                            />
+                          </IconButton>
+                        </Box>
+
+                        {/* 已有评论 */}
+                        {comments.length > 0 && (
+                          <>
+                            <Divider sx={{ my: 1 }} />
+                            <Box>
+                              {comments.map((c) => (
+                                <Box key={c.id} sx={{ mb: 0.4 }}>
+                                  <Typography
+                                    variant="caption"
+                                    sx={{
+                                      fontWeight: 600,
+                                      color: "#111827",
+                                      mr: 0.5,
+                                    }}
+                                  >
+                                    {c.authorName}:
+                                  </Typography>
+                                  <Typography
+                                    variant="caption"
+                                    sx={{ color: "#4B5563" }}
+                                  >
+                                    {c.text}
+                                  </Typography>
+                                </Box>
+                              ))}
+                            </Box>
+                          </>
+                        )}
+                      </Box>
+                    </Paper>
+                  );
+                })}
+              </Box>
             </Box>
-          ))
-        )}
+          ))}
       </Box>
 
       <BottomNavBar />
