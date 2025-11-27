@@ -12,6 +12,7 @@ import {
   Button,
   CircularProgress,
   Stack,
+  Fab,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import AddIcon from "@mui/icons-material/Add";
@@ -53,32 +54,35 @@ function ForumPage() {
   }, []);
   const userId = currentUser?._id;
 
-  // 发表知识贴 Dialog 状态
+  // 发帖对话框相关
   const [createOpen, setCreateOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newBody, setNewBody] = useState("");
-  const [newCategories, setNewCategories] = useState(""); // 预留分类，逗号分隔
+  const [newCategories, setNewCategories] = useState("");
   const [newFile, setNewFile] = useState(null);
   const [posting, setPosting] = useState(false);
 
-  // 加载帖子（只要“心得 / 知识帖”，排除 checkin）
+  // 封装加载帖子，方便发帖后刷新
   const fetchPosts = async () => {
     try {
       setLoading(true);
       setLoadingError("");
+
       const res = await fetch(`${API_BASE_URL}/forum/posts`);
-      if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+      const data = await res.json().catch(() => []);
 
-      const data = await res.json();
+      if (!res.ok) {
+        console.error("Load posts failed:", data);
+        throw new Error(`Request failed: ${res.status}`);
+      }
 
-      // ❗ 关键：过滤掉所有 source === "checkin" 的打卡贴
+      // 只保留非 checkin 的知识帖
       const knowledgeOnly = (data || [])
         .filter((p) => p.source !== "checkin")
-        // 知识帖按时间：最新在最上面
         .sort((a, b) => {
           const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
           const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-          return db - da;
+          return db - da; // 最新在最上面
         });
 
       setPosts(knowledgeOnly);
@@ -110,7 +114,6 @@ function ForumPage() {
   const handleCardClick = (post) => setSelectedPost(post);
   const handleCloseDialog = () => setSelectedPost(null);
 
-  // ✅ 统一一个小工具函数，用后端返回的 post 更新到本地 posts 里面
   const applyPostUpdate = (updatedPost) => {
     setPosts((prev) =>
       prev.map((p) => (p._id === updatedPost._id ? updatedPost : p))
@@ -123,38 +126,31 @@ function ForumPage() {
       alert("请先登录再点赞");
       return;
     }
-
     try {
       const res = await fetch(`${API_BASE_URL}/forum/posts/${id}/upvote`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId }),
       });
-
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || `Upvote failed: ${res.status}`);
-      }
+      if (!res.ok) throw new Error(data.error || "Upvote failed");
 
       const updatedPost = data.post;
       if (updatedPost) {
         applyPostUpdate(updatedPost);
-
         setInteractions((prev) => {
           const prevState = prev[id] || {
             upvoted: false,
             downvoted: false,
             bookmarked: false,
           };
-
-          const upvoted = isUserInArray(updatedPost.upvotedBy, userId);
-          const downvoted = isUserInArray(updatedPost.downvotedBy, userId);
-
           return {
             ...prev,
-            [id]: { ...prevState, upvoted, downvoted },
+            [id]: {
+              ...prevState,
+              upvoted: isUserInArray(updatedPost.upvotedBy, userId),
+              downvoted: isUserInArray(updatedPost.downvotedBy, userId),
+            },
           };
         });
       }
@@ -170,38 +166,31 @@ function ForumPage() {
       alert("请先登录再点踩");
       return;
     }
-
     try {
       const res = await fetch(`${API_BASE_URL}/forum/posts/${id}/downvote`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId }),
       });
-
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || `Downvote failed: ${res.status}`);
-      }
+      if (!res.ok) throw new Error(data.error || "Downvote failed");
 
       const updatedPost = data.post;
       if (updatedPost) {
         applyPostUpdate(updatedPost);
-
         setInteractions((prev) => {
           const prevState = prev[id] || {
             upvoted: false,
             downvoted: false,
             bookmarked: false,
           };
-
-          const upvoted = isUserInArray(updatedPost.upvotedBy, userId);
-          const downvoted = isUserInArray(updatedPost.downvotedBy, userId);
-
           return {
             ...prev,
-            [id]: { ...prevState, upvoted, downvoted },
+            [id]: {
+              ...prevState,
+              upvoted: isUserInArray(updatedPost.upvotedBy, userId),
+              downvoted: isUserInArray(updatedPost.downvotedBy, userId),
+            },
           };
         });
       }
@@ -217,43 +206,36 @@ function ForumPage() {
       alert("请先登录再收藏");
       return;
     }
-
     try {
       const res = await fetch(
         `${API_BASE_URL}/forum/posts/${id}/bookmark`,
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ userId }),
         }
       );
-
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || `Bookmark failed: ${res.status}`);
-      }
+      if (!res.ok) throw new Error(data.error || "Bookmark failed");
 
       const updatedPost = data.post;
       if (updatedPost) {
         applyPostUpdate(updatedPost);
-
         setInteractions((prev) => {
           const prevState = prev[id] || {
             upvoted: false,
             downvoted: false,
             bookmarked: false,
           };
-
-          const bookmarked = isUserInArray(
-            updatedPost.bookmarkedBy,
-            userId
-          );
-
           return {
             ...prev,
-            [id]: { ...prevState, bookmarked },
+            [id]: {
+              ...prevState,
+              bookmarked: isUserInArray(
+                updatedPost.bookmarkedBy,
+                userId
+              ),
+            },
           };
         });
       }
@@ -263,7 +245,7 @@ function ForumPage() {
     }
   };
 
-  // 搜索过滤（只在知识贴中搜）
+  // 搜索过滤
   const filteredPosts = useMemo(() => {
     if (!search.trim()) return posts;
     const q = search.toLowerCase();
@@ -280,7 +262,7 @@ function ForumPage() {
     if (file) setNewFile(file);
   };
 
-  // 发布新知识贴
+  // 发布知识贴
   const handleCreatePost = async () => {
     if (!userId) {
       alert("请先登录再发帖");
@@ -295,18 +277,16 @@ function ForumPage() {
       setPosting(true);
 
       const formData = new FormData();
-      // 后端 schema 要求 title 必填，所以如果用户没写，就给一个默认标题
       const safeTitle = newTitle.trim() || "Untitled post";
       formData.append("title", safeTitle);
       formData.append("content", newBody.trim());
       formData.append("userId", userId);
-      formData.append("source", "manual"); // 区分于 checkin
-      formData.append("isKnowledge", "true");
+      formData.append("source", "manual"); // 区分 checkin
       if (newCategories.trim()) {
         formData.append("categories", newCategories.trim());
       }
       if (newFile) {
-        formData.append("image", newFile); // 和后端 multer 字段名保持一致
+        formData.append("image", newFile); // 对应后端 multer 字段名
       }
 
       const res = await fetch(`${API_BASE_URL}/forum/posts`, {
@@ -314,15 +294,15 @@ function ForumPage() {
         body: formData,
       });
 
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
         console.error("Create post failed:", data);
         alert("Failed to create post. Please try again.");
         setPosting(false);
         return;
       }
 
-      // 不依赖返回内容，直接重新拉一次列表，保证前端状态干净
+      // 重新拉取帖子列表
       await fetchPosts();
 
       setPosting(false);
@@ -347,7 +327,7 @@ function ForumPage() {
         bgcolor: "#F2F2F2",
       }}
     >
-      {/* 顶部：搜索 + 发帖按钮 */}
+      {/* 顶部搜索栏 */}
       <Box
         sx={{
           px: { xs: 2, md: 4 },
@@ -356,53 +336,33 @@ function ForumPage() {
           bgcolor: "#F2F2F2",
         }}
       >
-        <Stack direction="row" spacing={1} alignItems="center">
-          <Box sx={{ flex: 1 }}>
-            <TextField
-              fullWidth
-              placeholder="Search for a knowledge post..."
-              variant="outlined"
-              size="small"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              InputProps={{
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <SearchIcon sx={{ color: "#ffffff" }} />
-                  </InputAdornment>
-                ),
-                sx: {
-                  bgcolor: "#5E7D28",
-                  borderRadius: 999,
-                  color: "#FFFFFF",
-                  px: 2,
-                  "& .MuiOutlinedInput-notchedOutline": {
-                    border: "none",
-                  },
-                  "& input::placeholder": {
-                    color: "rgba(255,255,255,0.85)",
-                  },
-                },
-              }}
-            />
-          </Box>
-
-          <Button
-            variant="contained"
-            size="small"
-            startIcon={<AddIcon sx={{ fontSize: 18 }} />}
-            onClick={() => setCreateOpen(true)}
-            sx={{
-              textTransform: "none",
-              borderRadius: 999,
+        <TextField
+          fullWidth
+          placeholder="Search for the post..."
+          variant="outlined"
+          size="small"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          InputProps={{
+            endAdornment: (
+              <InputAdornment position="end">
+                <SearchIcon sx={{ color: "#ffffff" }} />
+              </InputAdornment>
+            ),
+            sx: {
               bgcolor: "#5E7D28",
-              "&:hover": { bgcolor: "#46611F" },
-              whiteSpace: "nowrap",
-            }}
-          >
-            New post
-          </Button>
-        </Stack>
+              borderRadius: 999,
+              color: "#FFFFFF",
+              px: 2,
+              "& .MuiOutlinedInput-notchedOutline": {
+                border: "none",
+              },
+              "& input::placeholder": {
+                color: "rgba(255,255,255,0.85)",
+              },
+            },
+          }}
+        />
       </Box>
 
       {/* 列表区域 */}
@@ -415,7 +375,10 @@ function ForumPage() {
       >
         {loading && (
           <Box sx={{ display: "flex", justifyContent: "center", mt: 4 }}>
-            <CircularProgress size={28} />
+            <CircularProgress
+              size={28}
+              sx={{ color: "#5E7D28" }}
+            />
           </Box>
         )}
 
@@ -434,7 +397,6 @@ function ForumPage() {
               bookmarked: false,
             };
 
-            // 计算 Good Post（用于传给卡片，卡片里可以显示一个 tag）
             const isGoodPost =
               (p.upvotes ?? 0) >= 5 ||
               (p.bookmarks ?? 0) >= 3 ||
@@ -446,13 +408,12 @@ function ForumPage() {
                 title={p.title}
                 content={p.content}
                 hasMedia={p.hasMedia}
-                imageUrl={p.imageUrl} // 如果你在 ForumPostCard 里支持图片，可以用它
+                imageUrl={p.imageUrl}
                 authorName={p.authorName || "Anonymous"}
                 upvotesCount={p.upvotes ?? 0}
                 downvotesCount={p.downvotes ?? 0}
                 bookmarksCount={p.bookmarks ?? 0}
                 isGoodPost={isGoodPost}
-                // 交互状态
                 upvoted={state.upvoted}
                 downvoted={state.downvoted}
                 bookmarked={state.bookmarked}
@@ -462,7 +423,7 @@ function ForumPage() {
                 onCardClick={() => handleCardClick(p)}
               />
             );
-          }}
+          })}
 
         {!loading && !loadingError && filteredPosts.length === 0 && (
           <Typography variant="body2" sx={{ color: "#6B7280", mt: 2 }}>
@@ -471,9 +432,24 @@ function ForumPage() {
         )}
       </Box>
 
+      {/* 右下角悬浮发帖按钮 */}
+      <Fab
+        color="primary"
+        onClick={() => setCreateOpen(true)}
+        sx={{
+          position: "fixed",
+          right: 24,
+          bottom: 80, // 底部导航上方一点
+          bgcolor: "#5E7D28",
+          "&:hover": { bgcolor: "#46611F" },
+        }}
+      >
+        <AddIcon />
+      </Fab>
+
       <BottomNavBar />
 
-      {/* 帖子详情弹窗（简单保留，之后可以加评论） */}
+      {/* 帖子详情弹窗 */}
       <Dialog
         open={!!selectedPost}
         onClose={handleCloseDialog}
@@ -485,18 +461,6 @@ function ForumPage() {
           <Typography variant="body2" sx={{ color: "#4B5563" }}>
             {selectedPost?.content}
           </Typography>
-          {selectedPost?.hasMedia && (
-            <Box
-              sx={{
-                mt: 2,
-                height: 160,
-                borderRadius: 2,
-                bgcolor: "#DDDDDD",
-              }}
-            >
-              {/* 你可以在这里加图片 / 视频展示 */}
-            </Box>
-          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseDialog}>Close</Button>
@@ -546,7 +510,6 @@ function ForumPage() {
             placeholder="e.g. cooking, cleaning, budgeting"
             value={newCategories}
             onChange={(e) => setNewCategories(e.target.value)}
-            helperText="Comma-separated tags, like 'cooking, budgeting'"
           />
 
           <Box sx={{ mt: 2, display: "flex", alignItems: "center", gap: 2 }}>
