@@ -38,7 +38,8 @@ const systemGoals = [
   },
 ];
 
-function RankingRow({ rank, value, color }) {
+// 排行榜每一行
+function RankingRow({ rank, value, name, color }) {
   return (
     <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
       <Typography
@@ -53,8 +54,11 @@ function RankingRow({ rank, value, color }) {
           height: 18,
           mr: 0.5,
           bgcolor: "rgba(0,0,0,0.25)",
+          fontSize: 10,
         }}
-      />
+      >
+        {name?.[0] || rank}
+      </Avatar>
       <Box
         sx={{
           flexGrow: 1,
@@ -66,13 +70,18 @@ function RankingRow({ rank, value, color }) {
       >
         <Box
           sx={{
-            width: `${Math.min(value, 100)}%`,
+            width: `${Math.min(value || 0, 100)}%`,
             height: "100%",
             bgcolor: color,
           }}
         />
       </Box>
-      <Stack direction="row" spacing={0.4} alignItems="center" sx={{ ml: 0.5 }}>
+      <Stack
+        direction="row"
+        spacing={0.4}
+        alignItems="center"
+        sx={{ ml: 0.5 }}
+      >
         <Typography
           variant="body2"
           sx={{
@@ -230,11 +239,15 @@ function HomePage() {
 
   const [activeGoalId, setActiveGoalId] = useState(null);
   const [checkInNote, setCheckInNote] = useState("");
-  const [checkInImage, setCheckInImage] = useState(null); // 图片文件
+  const [checkInImage, setCheckInImage] = useState(null); // 打卡图片
   const [posting, setPosting] = useState(false);
+
+  // 今日排行榜
+  const [ranking, setRanking] = useState([]);
 
   const activeGoal = goals.find((g) => g.id === activeGoalId) || null;
 
+  // 读取当前用户
   useEffect(() => {
     try {
       const saved = localStorage.getItem("momentumUser");
@@ -285,6 +298,25 @@ function HomePage() {
     loadJoined();
   }, [userId]);
 
+  // 拉取今日排行榜
+  useEffect(() => {
+    const loadRanking = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/forum/ranking/today`);
+        if (!res.ok) {
+          console.error("Failed to load ranking");
+          return;
+        }
+        const data = await res.json();
+        setRanking(data.ranking || []);
+      } catch (err) {
+        console.error("Error loading ranking", err);
+      }
+    };
+
+    loadRanking();
+  }, []);
+
   const handleOpenCheckInDialog = (id) => {
     const goal = goals.find((g) => g.id === id);
     if (!goal || goal.checkedInToday) return;
@@ -305,7 +337,7 @@ function HomePage() {
     if (file) setCheckInImage(file);
   };
 
-  // Check in：对系统 goal，用 Forum；对 challenge goal，调用 /challenges/:id/checkin
+  // Check in：对系统 goal，用 Forum；对 challenge goal，调用 /challenges/:id/checkin（都支持图片）
   const handleConfirmCheckIn = async () => {
     if (!activeGoalId || !checkInNote.trim()) return;
     const goal = goals.find((g) => g.id === activeGoalId);
@@ -419,7 +451,7 @@ function HomePage() {
         flexDirection: "column",
       }}
     >
-      {/* 顶部绿色区域 */}
+      {/* 顶部绿色区域 + 今日排行榜 */}
       <Box
         sx={{
           bgcolor: "#516E1F",
@@ -443,8 +475,7 @@ function HomePage() {
           Hello, {displayName}!
         </Typography>
 
-        {/* ranking 部分你之前是注释掉的，可以按需恢复 */}
-        {/* <Typography
+        <Typography
           variant="body2"
           sx={{
             color: "rgba(255,255,255,0.9)",
@@ -453,11 +484,27 @@ function HomePage() {
             fontSize: 13,
           }}
         >
-          Weekly ranking &gt;
+          Today&apos;s ranking
         </Typography>
-        {rankingData.map((r) => (
-          <RankingRow key={r.rank} {...r} />
-        ))} */}
+
+        {ranking.slice(0, 3).map((r, index) => (
+          <RankingRow
+            key={r.userId}
+            rank={index + 1}
+            name={r.name}
+            value={r.totalPoints}
+            color={index === 0 ? "#E7FF90" : "#AEB7FF"}
+          />
+        ))}
+
+        {ranking.length === 0 && (
+          <Typography
+            variant="caption"
+            sx={{ color: "rgba(255,255,255,0.8)" }}
+          >
+            No activity yet today.
+          </Typography>
+        )}
       </Box>
 
       {/* 中间白色内容区域 */}

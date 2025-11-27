@@ -5,7 +5,8 @@ const ForumPostSchema = new mongoose.Schema(
     title: { type: String, required: true },
     content: { type: String, required: true },
     hasMedia: { type: Boolean, default: false },
-
+    // 是否是 life skill “知识贴”
+    isKnowledge: { type: Boolean, default: false },
     // 上传的图片地址（单张）
     imageUrl: {
       type: String,

@@ -338,5 +338,116 @@ router.post("/posts/:id/comments", async (req, res) => {
     res.status(500).json({ error: "Failed to add comment" });
   }
 });
+/**
+ * GET /api/forum/ranking/today
+ * 计算“今天”的积分排行
+ */
+router.get("/ranking/today", async (req, res) => {
+  try {
+    const now = new Date();
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(now);
+    end.setHours(23, 59, 59, 999);
+
+    // 找出今天创建的所有帖子
+    const posts = await ForumPost.find({
+      createdAt: { $gte: start, $lte: end },
+    }).populate("author", "name");
+
+    const taskPoints = {
+      "Stay hydrated": 5,
+      "Everyday Meditation": 6,
+      "Morning Stretch": 3,
+    };
+
+    // 每个用户的中间状态
+    const scoreMap = new Map();
+    const ensureUser = (post) => {
+      const author = post.author;
+      if (!author) return null;
+      const uid = author._id.toString();
+      if (!scoreMap.has(uid)) {
+        scoreMap.set(uid, {
+          userId: uid,
+          name: author.name || "Anonymous",
+          checkinPoints: 0,
+          likeEvents: 0,
+          knowledgePosts: 0,
+          bonusPoints: 0,
+        });
+      }
+      return scoreMap.get(uid);
+    };
+
+    for (const p of posts) {
+      const userScore = ensureUser(p);
+      if (!userScore) continue;
+      const uid = userScore.userId;
+
+      // 1) 打卡积分（按 title）
+      if (p.source === "checkin") {
+        const pts = taskPoints[p.title] || 0;
+        userScore.checkinPoints += pts;
+      }
+
+      // 2) 点赞事件：来自其他人的点赞
+      const othersLikes = (p.upvotedBy || []).filter(
+        (u) => u.toString() !== uid
+      ).length;
+      userScore.likeEvents += othersLikes;
+
+      // 3) 知识贴
+      if (p.isKnowledge) {
+        userScore.knowledgePosts += 1;
+      }
+
+      // 4) good post bonus
+      const upCount =
+        typeof p.upvotes === "number"
+          ? p.upvotes
+          : (p.upvotedBy || []).length;
+      const bookmarkCount =
+        typeof p.bookmarks === "number"
+          ? p.bookmarks
+          : (p.bookmarkedBy || []).length;
+
+      if (upCount >= 5 || bookmarkCount >= 3) {
+        userScore.bonusPoints += 10;
+      }
+    }
+
+    // 把中间状态映射到最终得分
+    const ranking = Array.from(scoreMap.values())
+      .map((s) => {
+        const likePts = Math.min(s.likeEvents, 5); // cap 5/day
+        const knowledgePts = Math.min(s.knowledgePosts * 5, 20); // cap 20/day
+        const total =
+          s.checkinPoints + likePts + knowledgePts + s.bonusPoints;
+
+        return {
+          userId: s.userId,
+          name: s.name,
+          totalPoints: total,
+          breakdown: {
+            checkins: s.checkinPoints,
+            likes: likePts,
+            knowledge: knowledgePts,
+            bonus: s.bonusPoints,
+          },
+        };
+      })
+      // 按总分从高到低排序
+      .sort((a, b) => b.totalPoints - a.totalPoints);
+
+    res.json({
+      generatedAt: new Date(),
+      ranking,
+    });
+  } catch (err) {
+    console.error("Error generating today ranking:", err);
+    res.status(500).json({ error: "Failed to generate ranking" });
+  }
+});
 
 export default router;
