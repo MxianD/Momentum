@@ -18,6 +18,7 @@ import {
 import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import FlashOnIcon from "@mui/icons-material/FlashOn";
+import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 
 import BottomNavBar from "../components/BottomNavBar.jsx";
 
@@ -39,26 +40,67 @@ const systemGoals = [
 ];
 
 // 排行榜每一行
-function RankingRow({ rank, value, name, color }) {
+function RankingRow({ rank, value, name, color, isCurrentUser }) {
+  const isTop1 = rank === 1;
+
   return (
-    <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
+    <Stack
+      direction="row"
+      alignItems="center"
+      spacing={1}
+      sx={{
+        mb: 0.5,
+        px: 0.8,
+        py: 0.4,
+        borderRadius: 999,
+        bgcolor: isCurrentUser
+          ? "rgba(0,0,0,0.18)"
+          : "transparent",
+      }}
+    >
       <Typography
         variant="body2"
-        sx={{ width: 20, color: "rgba(255,255,255,0.9)", fontSize: 12 }}
+        sx={{
+          width: 20,
+          color: "rgba(255,255,255,0.9)",
+          fontSize: 12,
+        }}
       >
         {rank}
       </Typography>
+
       <Avatar
         sx={{
-          width: 18,
-          height: 18,
+          width: 20,
+          height: 20,
           mr: 0.5,
-          bgcolor: "rgba(0,0,0,0.25)",
+          bgcolor: isTop1 ? "#FACC15" : "rgba(0,0,0,0.25)",
           fontSize: 10,
+          color: isTop1 ? "#78350F" : "#F9FAFB",
+          border: isTop1 ? "2px solid #FDE68A" : "none",
         }}
       >
-        {name?.[0] || rank}
+        {isTop1 ? (
+          <EmojiEventsIcon sx={{ fontSize: 16 }} />
+        ) : (
+          (name && name[0]) || rank
+        )}
       </Avatar>
+
+      <Typography
+        variant="body2"
+        sx={{
+          color: "rgba(255,255,255,0.95)",
+          fontSize: 12,
+          maxWidth: 90,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {name || "Anonymous"}
+      </Typography>
+
       <Box
         sx={{
           flexGrow: 1,
@@ -76,7 +118,13 @@ function RankingRow({ rank, value, name, color }) {
           }}
         />
       </Box>
-      <Stack direction="row" spacing={0.4} alignItems="center" sx={{ ml: 0.5 }}>
+
+      <Stack
+        direction="row"
+        spacing={0.4}
+        alignItems="center"
+        sx={{ ml: 0.5 }}
+      >
         <Typography
           variant="body2"
           sx={{
@@ -237,8 +285,9 @@ function HomePage() {
   const [checkInImage, setCheckInImage] = useState(null); // 打卡图片
   const [posting, setPosting] = useState(false);
 
-  // 今日排行榜
+  // 总排行榜
   const [ranking, setRanking] = useState([]);
+  const [visibleCount, setVisibleCount] = useState(5); // 每次多展示 5 个
 
   const activeGoal = goals.find((g) => g.id === activeGoalId) || null;
 
@@ -260,7 +309,9 @@ function HomePage() {
 
     const loadJoined = async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/challenges/joined/${userId}`);
+        const res = await fetch(
+          `${API_BASE_URL}/challenges/joined/${userId}`
+        );
         if (!res.ok) {
           console.error("Failed to load user challenges");
           return;
@@ -291,18 +342,19 @@ function HomePage() {
     loadJoined();
   }, [userId]);
 
-  // 拉取今日排行榜
+  // 拉取总排行榜
   useEffect(() => {
     const loadRanking = async () => {
       try {
         const res = await fetch(`${API_BASE_URL}/forum/ranking/total`);
-
         if (!res.ok) {
           console.error("Failed to load ranking");
           return;
         }
         const data = await res.json();
-        setRanking(data.ranking || []);
+        const list = data.ranking || [];
+        setRanking(list);
+        setVisibleCount(5); // 每次加载时重置可见数量
       } catch (err) {
         console.error("Error loading ranking", err);
       }
@@ -437,6 +489,23 @@ function HomePage() {
   const goalsLeft = goals.filter((g) => !g.checkedInToday).length;
   const displayName = currentUser?.name || "Amy";
 
+  // 计算“我的位置”
+  const myIndex = userId
+    ? ranking.findIndex((r) => r.userId === userId)
+    : -1;
+  const myRank = myIndex >= 0 ? myIndex + 1 : null;
+  const myPoints =
+    myIndex >= 0 ? ranking[myIndex].totalPoints : null;
+
+  const canShowMore = visibleCount < ranking.length;
+
+  const handleShowMore = () => {
+    if (!canShowMore) return;
+    setVisibleCount((prev) =>
+      Math.min(prev + 5, ranking.length)
+    );
+  };
+
   return (
     <Box
       sx={{
@@ -445,7 +514,6 @@ function HomePage() {
         flexDirection: "column",
       }}
     >
-      {/* 顶部绿色区域 + 今日排行榜 */}
       {/* 顶部绿色区域 + 总排行榜 */}
       <Box
         sx={{
@@ -464,7 +532,7 @@ function HomePage() {
           sx={{
             fontWeight: 700,
             fontSize: 22,
-            mb: 2,
+            mb: 1.2,
           }}
         >
           Hello, {displayName}!
@@ -475,28 +543,94 @@ function HomePage() {
           sx={{
             color: "rgba(255,255,255,0.9)",
             fontWeight: 500,
-            mb: 1,
+            mb: 0.5,
             fontSize: 13,
           }}
         >
           Total ranking
         </Typography>
 
-        {ranking.slice(0, 3).map((r, index) => (
-          <RankingRow
-            key={r.userId}
-            rank={index + 1}
-            name={r.name}
-            value={r.totalPoints}
-            color={index === 0 ? "#E7FF90" : "#AEB7FF"}
-          />
-        ))}
-
-        {ranking.length === 0 && (
-          <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.8)" }}>
-            No ranking data yet.
+        {/* 显示“我的位置” */}
+        {myRank && myPoints != null && (
+          <Typography
+            variant="caption"
+            sx={{
+              display: "block",
+              color: "rgba(255,255,255,0.85)",
+              mb: 1,
+            }}
+          >
+            You are{" "}
+            <strong>
+              #{myRank}
+            </strong>{" "}
+            with{" "}
+            <strong>{myPoints}</strong> pts.
           </Typography>
         )}
+
+        {/* 排行列表（点击“Show next 5” 展开更多） */}
+        <Box
+          sx={{
+            borderRadius: 16,
+            bgcolor: "rgba(0,0,0,0.12)",
+            p: 0.8,
+          }}
+        >
+          {ranking.slice(0, visibleCount).map((r, index) => (
+            <RankingRow
+              key={r.userId}
+              rank={index + 1}
+              name={r.name}
+              value={r.totalPoints}
+              color={index === 0 ? "#E7FF90" : "#AEB7FF"}
+              isCurrentUser={r.userId === userId}
+            />
+          ))}
+
+          {ranking.length === 0 && (
+            <Typography
+              variant="caption"
+              sx={{
+                color: "rgba(255,255,255,0.8)",
+                px: 0.5,
+                py: 0.3,
+                display: "block",
+              }}
+            >
+              No ranking data yet.
+            </Typography>
+          )}
+
+          {canShowMore && (
+            <Box
+              onClick={handleShowMore}
+              sx={{
+                mt: 0.5,
+                py: 0.4,
+                borderRadius: 999,
+                bgcolor: "rgba(0,0,0,0.16)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                "&:active": {
+                  transform: "scale(0.99)",
+                },
+              }}
+            >
+              <Typography
+                variant="caption"
+                sx={{
+                  color: "rgba(255,255,255,0.9)",
+                  fontWeight: 500,
+                }}
+              >
+                Show next 5
+              </Typography>
+            </Box>
+          )}
+        </Box>
       </Box>
 
       {/* 中间白色内容区域 */}
@@ -553,8 +687,12 @@ function HomePage() {
           {activeGoal ? `Check in - ${activeGoal.title}` : "Check in"}
         </DialogTitle>
         <DialogContent dividers>
-          <Typography variant="body2" sx={{ mb: 1.5, color: "#6B7280" }}>
-            Share your progress for today. What did you do for this challenge?
+          <Typography
+            variant="body2"
+            sx={{ mb: 1.5, color: "#6B7280" }}
+          >
+            Share your progress for today. What did you do for this
+            challenge?
           </Typography>
           <TextField
             multiline
