@@ -1,4 +1,4 @@
-// src/models/ForumPost.js
+// backend/src/models/ForumPost.js
 import mongoose from "mongoose";
 
 const ForumPostSchema = new mongoose.Schema(
@@ -28,14 +28,16 @@ const ForumPostSchema = new mongoose.Schema(
       default: null,
     },
 
-    // 按用户存储点赞 / 点踩 / 收藏
+    // 点赞 / 点踩 / 收藏
     upvotedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     downvotedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     bookmarkedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+
+    // ⭐ 评论列表
     comments: [
       {
         _id: false,
-        id: String,
+        id: String, // 简单字符串 id（时间戳）
         user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
         text: String,
         createdAt: { type: Date, default: Date.now },

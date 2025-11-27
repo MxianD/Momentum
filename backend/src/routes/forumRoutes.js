@@ -1,19 +1,20 @@
-// src/routes/forumRoutes.js
+// backend/src/routes/forumRoutes.js
 import express from "express";
+import mongoose from "mongoose";
 import ForumPost from "../models/ForumPost.js";
 
 const router = express.Router();
 
 /**
  * GET /api/forum/posts
- * 拿到所有帖子 + 作者名字 + 点赞/点踩/收藏计数
+ * 拿到所有帖子 + 作者名字 + 点赞/点踩/收藏计数 + 评论（带评论人名字）
  */
 router.get("/posts", async (req, res) => {
   try {
     const posts = await ForumPost.find()
-  .sort({ createdAt: -1 })
-  .populate("author", "name")
-  .populate("comments.user", "name");   // ⭐⭐ 新增
+      .sort({ createdAt: -1 })
+      .populate("author", "name")
+      .populate("comments.user", "name");
 
     const mapped = posts.map((p) => {
       const obj = p.toObject(); // 已包含 virtuals
@@ -21,9 +22,14 @@ router.get("/posts", async (req, res) => {
       return {
         ...obj,
         authorName: obj.author?.name || "Anonymous",
-        upvotes: obj.upvotes ?? 0, // 来自 virtual
+        upvotes: obj.upvotes ?? 0,
         downvotes: obj.downvotes ?? 0,
         bookmarks: obj.bookmarks ?? 0,
+        // 给每条评论加 userName，前端好用
+        comments: (obj.comments || []).map((c) => ({
+          ...c,
+          userName: c.user?.name || "Anonymous",
+        })),
       };
     });
 
@@ -37,17 +43,17 @@ router.get("/posts", async (req, res) => {
 /**
  * POST /api/forum/posts/:id/upvote
  * 按用户切换点赞（再次点击则取消赞），并清除对同一帖子的点踩
- *
- * body: { userId: "xxxx" }
  */
-// POST /api/forum/posts/:id/upvote
 router.post("/posts/:id/upvote", async (req, res) => {
   try {
     const { id } = req.params;
     const { userId } = req.body;
-    console.log("BODY in /upvote:", req.body);
+
     if (!userId) {
       return res.status(400).json({ error: "userId is required" });
+    }
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: "Invalid post id" });
     }
 
     const post = await ForumPost.findById(id);
@@ -70,6 +76,8 @@ router.post("/posts/:id/upvote", async (req, res) => {
 
     await post.save();
     await post.populate("author", "name");
+    await post.populate("comments.user", "name");
+
     const obj = post.toObject();
 
     res.json({
@@ -80,6 +88,10 @@ router.post("/posts/:id/upvote", async (req, res) => {
         upvotes: obj.upvotes ?? 0,
         downvotes: obj.downvotes ?? 0,
         bookmarks: obj.bookmarks ?? 0,
+        comments: (obj.comments || []).map((c) => ({
+          ...c,
+          userName: c.user?.name || "Anonymous",
+        })),
       },
     });
   } catch (err) {
@@ -99,6 +111,9 @@ router.post("/posts/:id/downvote", async (req, res) => {
 
     if (!userId) {
       return res.status(400).json({ error: "userId is required" });
+    }
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: "Invalid post id" });
     }
 
     const post = await ForumPost.findById(id);
@@ -123,6 +138,7 @@ router.post("/posts/:id/downvote", async (req, res) => {
 
     await post.save();
     await post.populate("author", "name");
+    await post.populate("comments.user", "name");
 
     const obj = post.toObject();
 
@@ -134,6 +150,10 @@ router.post("/posts/:id/downvote", async (req, res) => {
         upvotes: obj.upvotes ?? 0,
         downvotes: obj.downvotes ?? 0,
         bookmarks: obj.bookmarks ?? 0,
+        comments: (obj.comments || []).map((c) => ({
+          ...c,
+          userName: c.user?.name || "Anonymous",
+        })),
       },
     });
   } catch (err) {
@@ -154,6 +174,9 @@ router.post("/posts/:id/bookmark", async (req, res) => {
     if (!userId) {
       return res.status(400).json({ error: "userId is required" });
     }
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: "Invalid post id" });
+    }
 
     const post = await ForumPost.findById(id);
 
@@ -167,7 +190,9 @@ router.post("/posts/:id/bookmark", async (req, res) => {
 
     if (hasBookmarked) {
       // 已收藏 -> 取消
-      post.bookmarkedBy = post.bookmarkedBy.filter((u) => u.toString() !== uid);
+      post.bookmarkedBy = post.bookmarkedBy.filter(
+        (u) => u.toString() !== uid
+      );
     } else {
       // 未收藏 -> 收藏
       post.bookmarkedBy.push(uid);
@@ -175,6 +200,7 @@ router.post("/posts/:id/bookmark", async (req, res) => {
 
     await post.save();
     await post.populate("author", "name");
+    await post.populate("comments.user", "name");
 
     const obj = post.toObject();
 
@@ -186,6 +212,10 @@ router.post("/posts/:id/bookmark", async (req, res) => {
         upvotes: obj.upvotes ?? 0,
         downvotes: obj.downvotes ?? 0,
         bookmarks: obj.bookmarks ?? 0,
+        comments: (obj.comments || []).map((c) => ({
+          ...c,
+          userName: c.user?.name || "Anonymous",
+        })),
       },
     });
   } catch (err) {
@@ -193,18 +223,24 @@ router.post("/posts/:id/bookmark", async (req, res) => {
     res.status(500).json({ error: "Failed to bookmark" });
   }
 });
+
 /**
- * POST /api/forum/posts/:id/comments
- * 给帖子添加评论
- * body: { userId: "xxx", text: "评论内容" }
+ * ⭐ 新增：POST /api/forum/posts/:id/comments
+ * 添加一条评论并返回更新后的帖子
+ * body: { userId, text }
  */
 router.post("/posts/:id/comments", async (req, res) => {
   try {
     const { id } = req.params;
     const { userId, text } = req.body;
 
-    if (!userId || !text.trim()) {
-      return res.status(400).json({ error: "userId and text required" });
+    if (!userId || !text?.trim()) {
+      return res
+        .status(400)
+        .json({ error: "userId and non-empty text required" });
+    }
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: "Invalid post id" });
     }
 
     const post = await ForumPost.findById(id);
@@ -213,7 +249,7 @@ router.post("/posts/:id/comments", async (req, res) => {
     const newComment = {
       id: `${Date.now()}`,
       user: userId,
-      text,
+      text: text.trim(),
       createdAt: new Date(),
     };
 
@@ -223,9 +259,21 @@ router.post("/posts/:id/comments", async (req, res) => {
     await post.populate("author", "name");
     await post.populate("comments.user", "name");
 
+    const obj = post.toObject();
+
     res.json({
       success: true,
-      post: post.toObject(),
+      post: {
+        ...obj,
+        authorName: obj.author?.name || "Anonymous",
+        upvotes: obj.upvotes ?? 0,
+        downvotes: obj.downvotes ?? 0,
+        bookmarks: obj.bookmarks ?? 0,
+        comments: (obj.comments || []).map((c) => ({
+          ...c,
+          userName: c.user?.name || "Anonymous",
+        })),
+      },
     });
   } catch (err) {
     console.error("Error adding comment:", err);

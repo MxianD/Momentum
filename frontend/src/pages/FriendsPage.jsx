@@ -21,37 +21,6 @@ import BottomNavBar from "../components/BottomNavBar.jsx";
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
 
-// 临时 mock 数据
-const mockFeed = [
-  {
-    id: "p1",
-    dateLabel: "Oct. 17",
-    content: "Bla bla bla bla bla bla",
-    authorName: "Amy",
-    liked: false,
-    likeCount: 3,
-    hasMedia: true,
-  },
-  {
-    id: "p2",
-    dateLabel: "Oct. 17",
-    content: "Bla bla bla bla bla bla",
-    authorName: "Bob",
-    liked: true,
-    likeCount: 5,
-    hasMedia: false,
-  },
-  {
-    id: "p3",
-    dateLabel: "Oct. 16",
-    content: "Bla bla bla bla bla bla",
-    authorName: "Cathy",
-    liked: false,
-    likeCount: 1,
-    hasMedia: true,
-  },
-];
-
 // 单个帖子卡片
 function FriendPostCard({
   content,
@@ -65,22 +34,12 @@ function FriendPostCard({
   onLike,
   onSubmitComment,
 }) {
-  // 回车发送（不换行）
   const handleKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       onSubmitComment();
     }
   };
-  useEffect(() => {
-    const loadPosts = async () => {
-      const res = await fetch(`${API_BASE_URL}/forum/posts`);
-      const data = await res.json();
-      setFeed(data); // 包含 comments
-    };
-
-    loadPosts();
-  }, []);
 
   return (
     <Paper
@@ -187,11 +146,15 @@ function FriendPostCard({
                   "& .MuiOutlinedInput-notchedOutline": {
                     borderColor: "#7E9B3C",
                   },
-                  pr: 0, // 给右侧按钮留空间
+                  pr: 0,
                 },
               }}
             />
-            <IconButton size="small" onClick={onSubmitComment} sx={{ ml: 0.5 }}>
+            <IconButton
+              size="small"
+              onClick={onSubmitComment}
+              sx={{ ml: 0.5 }}
+            >
               <SendIcon sx={{ fontSize: 18, color: "#7E9B3C" }} />
             </IconButton>
           </Box>
@@ -203,13 +166,10 @@ function FriendPostCard({
 
 function FriendsPage() {
   const [currentUser, setCurrentUser] = useState(null);
-  const [feed, setFeed] = useState(mockFeed);
-
-  // 每个帖子当前输入中的评论内容
+  const [feed, setFeed] = useState([]);
   const [commentDrafts, setCommentDrafts] = useState({});
-  // 每个帖子已经发送的评论
-  const [commentsByPost, setCommentsByPost] = useState({});
 
+  // 读取当前用户
   useEffect(() => {
     try {
       const saved = localStorage.getItem("momentumUser");
@@ -219,22 +179,73 @@ function FriendsPage() {
     }
   }, []);
 
-  const displayName = currentUser?.name || "Friends";
-  const userName = currentUser?.name || "You";
+  // 拉取帖子列表
+  useEffect(() => {
+    const loadPosts = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/forum/posts`);
+        const data = await res.json();
 
-  // 点赞本地切换
-  const handleToggleLike = (postId) => {
-    setFeed((prev) =>
-      prev.map((p) =>
-        p.id === postId
-          ? {
-              ...p,
-              liked: !p.liked,
-              likeCount: p.liked ? p.likeCount - 1 : p.likeCount + 1,
-            }
-          : p
-      )
-    );
+        const normalized = data.map((p) => {
+          const created = p.createdAt ? new Date(p.createdAt) : new Date();
+          const dateLabel = created.toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+          });
+
+          return {
+            ...p,
+            id: p._id,
+            dateLabel,
+            likeCount: p.upvotes ?? 0,
+          };
+        });
+
+        setFeed(normalized);
+      } catch (err) {
+        console.error("Failed to load forum posts", err);
+      }
+    };
+
+    loadPosts();
+  }, []);
+
+  const userName = currentUser?.name || "You";
+  const userId = currentUser?._id;
+
+  const handleToggleLike = async (postId) => {
+    if (!userId) return;
+
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/forum/posts/${postId}/upvote`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        console.error("Failed to upvote:", data);
+        return;
+      }
+
+      setFeed((prev) =>
+        prev.map((p) =>
+          p.id === postId
+            ? {
+                ...data.post,
+                id: data.post._id,
+                dateLabel: p.dateLabel,
+                likeCount: data.post.upvotes ?? 0,
+              }
+            : p
+        )
+      );
+    } catch (err) {
+      console.error("Failed to toggle like", err);
+    }
   };
 
   const handleChangeComment = (postId, value) => {
@@ -243,7 +254,7 @@ function FriendsPage() {
 
   const handleSubmitComment = async (postId) => {
     const text = (commentDrafts[postId] || "").trim();
-    if (!text || !currentUser?._id) return;
+    if (!text || !userId) return;
 
     try {
       const res = await fetch(
@@ -252,20 +263,32 @@ function FriendsPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            userId: currentUser._id,
+            userId,
             text,
           }),
         }
       );
 
       const data = await res.json();
-      if (data.success) {
-        // 用后端返回的最新 post 覆盖本地的那一个
-        setFeed((prev) => prev.map((p) => (p.id === postId ? data.post : p)));
-
-        // 清空输入框
-        setCommentDrafts((prev) => ({ ...prev, [postId]: "" }));
+      if (!res.ok || !data.success) {
+        console.error("Failed to send comment:", data);
+        return;
       }
+
+      setFeed((prev) =>
+        prev.map((p) =>
+          p.id === postId
+            ? {
+                ...data.post,
+                id: data.post._id,
+                dateLabel: p.dateLabel,
+                likeCount: data.post.upvotes ?? 0,
+              }
+            : p
+        )
+      );
+
+      setCommentDrafts((prev) => ({ ...prev, [postId]: "" }));
     } catch (err) {
       console.error("Failed to send comment", err);
     }
@@ -278,8 +301,7 @@ function FriendsPage() {
     acc[key].push(post);
     return acc;
   }, {});
-
-  const dateSections = Object.entries(grouped); // [ [date, posts], ... ]
+  const dateSections = Object.entries(grouped);
 
   return (
     <Box
@@ -352,7 +374,18 @@ function FriendsPage() {
             {/* 每个帖子一行：左边时间轴，右边卡片 */}
             {posts.map((post, index) => {
               const isLast = index === posts.length - 1;
-              const comments = commentsByPost[post.id] || [];
+
+              const comments = (post.comments || []).map((c) => ({
+                id: c.id,
+                authorName: c.userName || "Anonymous",
+                text: c.text,
+              }));
+
+              const liked =
+                !!userId &&
+                (post.upvotedBy || []).some(
+                  (u) => u.toString && u.toString() === userId
+                );
 
               return (
                 <Box
@@ -400,7 +433,7 @@ function FriendsPage() {
                     content={post.content}
                     authorName={post.authorName}
                     hasMedia={post.hasMedia}
-                    liked={post.liked}
+                    liked={liked}
                     likeCount={post.likeCount}
                     commentValue={commentDrafts[post.id] || ""}
                     comments={comments}
