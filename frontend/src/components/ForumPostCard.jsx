@@ -25,28 +25,37 @@ const API_BASE_URL =
 const API_ORIGIN = API_BASE_URL.replace(/\/api$/, "");
 
 function ForumPostCard({
+  // 内容
   title,
   content,
   hasMedia,
   imageUrl,
   authorName,
+
+  // 计数
   upvotesCount = 0,
   downvotesCount = 0,
   bookmarksCount = 0,
+
+  // 标签
   isGoodPost = false,
   categories = [],
 
+  // 评论相关
   comments = [],
   commentValue = "",
   onCommentChange,
   onSubmitComment,
 
+  // 点赞/点踩/收藏状态 + 回调
   upvoted = false,
   downvoted = false,
   bookmarked = false,
   onUpvote,
   onDownvote,
   onToggleBookmark,
+
+  // 点击卡片（可选）
   onCardClick,
 }) {
   const handleKeyDown = (e) => {
@@ -56,7 +65,6 @@ function ForumPostCard({
     }
   };
 
-  // 真实图片 URL
   const mediaSrc = imageUrl
     ? imageUrl.startsWith("http")
       ? imageUrl
@@ -74,7 +82,7 @@ function ForumPostCard({
         border: "1px solid #E5E7EB",
       }}
     >
-      {/* 可点击的上半部分：标题 + 正文 + 图片 */}
+      {/* 上半部分：作者 + 标题 + 正文 + 图片（点击查看详情） */}
       <Box
         onClick={onCardClick}
         sx={{
@@ -84,7 +92,7 @@ function ForumPostCard({
           cursor: onCardClick ? "pointer" : "default",
         }}
       >
-        {/* 顶部：作者 + tags */}
+        {/* 作者 + 标签行 */}
         <Stack
           direction="row"
           justifyContent="space-between"
@@ -156,13 +164,13 @@ function ForumPostCard({
           variant="body2"
           sx={{
             color: "#4B5563",
-            mb: (hasMedia || mediaSrc) ? 1.2 : 0.2,
+            mb: hasMedia || mediaSrc ? 1.0 : 0.4,
           }}
         >
           {content}
         </Typography>
 
-        {/* 图片区域 */}
+        {/* 图片 */}
         {(hasMedia || mediaSrc) && (
           <Box
             sx={{
@@ -173,7 +181,7 @@ function ForumPostCard({
               height: 150,
             }}
           >
-            {mediaSrc ? (
+            {mediaSrc && (
               <Box
                 component="img"
                 src={mediaSrc}
@@ -185,28 +193,25 @@ function ForumPostCard({
                   display: "block",
                 }}
               />
-            ) : null}
+            )}
           </Box>
         )}
       </Box>
 
       <Divider />
 
-      {/* 交互 + 评论区域 */}
+      {/* 下半部分：点赞/点踩/收藏 + 评论区 */}
       <Box sx={{ px: 1.8, pt: 1, pb: 1.2 }}>
-        {/* 点赞 / 点踩 / 收藏 */}
+        {/* 点赞 / 点踩 / 收藏 一行 */}
         <Stack
           direction="row"
           alignItems="center"
           spacing={2}
-          sx={{ mb: 1 }}
+          sx={{ mb: comments?.length ? 1 : 0.8 }}
         >
+          {/* 👍 */}
           <Stack direction="row" alignItems="center" spacing={0.5}>
-            <IconButton
-              size="small"
-              onClick={onUpvote}
-              sx={{ p: 0.2 }}
-            >
+            <IconButton size="small" onClick={onUpvote} sx={{ p: 0.2 }}>
               {upvoted ? (
                 <ThumbUpAltIcon sx={{ fontSize: 20, color: "#4CAF50" }} />
               ) : (
@@ -223,12 +228,9 @@ function ForumPostCard({
             </Typography>
           </Stack>
 
+          {/* 👎 */}
           <Stack direction="row" alignItems="center" spacing={0.5}>
-            <IconButton
-              size="small"
-              onClick={onDownvote}
-              sx={{ p: 0.2 }}
-            >
+            <IconButton size="small" onClick={onDownvote} sx={{ p: 0.2 }}>
               {downvoted ? (
                 <ThumbDownAltIcon
                   sx={{ fontSize: 20, color: "#EF4444" }}
@@ -247,6 +249,7 @@ function ForumPostCard({
             </Typography>
           </Stack>
 
+          {/* 🔖 */}
           <Stack direction="row" alignItems="center" spacing={0.5}>
             <IconButton
               size="small"
@@ -270,11 +273,11 @@ function ForumPostCard({
           </Stack>
         </Stack>
 
-        {/* 已有评论 */}
+        {/* 已有评论列表 */}
         {comments && comments.length > 0 && (
           <Box sx={{ mb: 1 }}>
             {comments.map((c) => (
-              <Box key={c.id} sx={{ mb: 0.4 }}>
+              <Box key={c.id} sx={{ mb: 0.35 }}>
                 <Typography
                   variant="caption"
                   sx={{
