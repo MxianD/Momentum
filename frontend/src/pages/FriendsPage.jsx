@@ -21,10 +21,14 @@ import BottomNavBar from "../components/BottomNavBar.jsx";
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
 
+// 把 /api 去掉，得到后端根域名，用来拼接图片 URL
+const API_ORIGIN = API_BASE_URL.replace(/\/api$/, "");
+
 // 单个帖子卡片
 function FriendPostCard({
   content,
   authorName,
+  imageUrl,
   hasMedia,
   liked,
   likeCount,
@@ -53,17 +57,29 @@ function FriendPostCard({
         border: "1px solid #E5E7EB",
       }}
     >
-      {/* 图片区域 */}
-      {hasMedia && (
+      {/* 图片区域：有 imageUrl 就显示真实图片，否则按 hasMedia 显示灰框 */}
+      {imageUrl ? (
+        <Box
+          component="img"
+          src={`${API_ORIGIN}${imageUrl}`}
+          alt="post media"
+          sx={{
+            width: "100%",
+            height: 130,
+            objectFit: "cover",
+            display: "block",
+            bgcolor: "#E5E5E5",
+          }}
+        />
+      ) : hasMedia ? (
         <Box
           sx={{
             height: 130,
             bgcolor: "#E5E5E5",
           }}
         />
-      )}
+      ) : null}
 
-      {/* 文本 + 底部区域 */}
       <Box sx={{ px: 1.8, pt: 1.2, pb: 1.4 }}>
         <Stack direction="row" justifyContent="space-between" mb={1}>
           <Typography
@@ -111,7 +127,6 @@ function FriendPostCard({
         )}
 
         <Stack direction="row" alignItems="center" spacing={1.5}>
-          {/* 点赞 */}
           <IconButton
             size="small"
             onClick={onLike}
@@ -129,7 +144,6 @@ function FriendPostCard({
             {likeCount}
           </Typography>
 
-          {/* 评论输入框 + 发送按钮 */}
           <Box sx={{ flex: 1, display: "flex", alignItems: "center" }}>
             <TextField
               size="small"
@@ -150,7 +164,11 @@ function FriendPostCard({
                 },
               }}
             />
-            <IconButton size="small" onClick={onSubmitComment} sx={{ ml: 0.5 }}>
+            <IconButton
+              size="small"
+              onClick={onSubmitComment}
+              sx={{ ml: 0.5 }}
+            >
               <SendIcon sx={{ fontSize: 18, color: "#7E9B3C" }} />
             </IconButton>
           </Box>
@@ -175,18 +193,31 @@ function FriendsPage() {
     }
   }, []);
 
-  // 拉取帖子列表
+  const userId = currentUser?._id;
+
+  // 拉取【自己 + 好友】的帖子，按时间从早到晚
   useEffect(() => {
+    if (!userId) return;
+
     const loadPosts = async () => {
       try {
-        if (!userId) return;
         const res = await fetch(
           `${API_BASE_URL}/forum/posts/friends/${userId}`
         );
-
+        if (!res.ok) {
+          console.error("Failed to load friends posts");
+          return;
+        }
         const data = await res.json();
 
-        const normalized = data.map((p) => {
+        // 按 createdAt 升序（最早在上面）
+        const sorted = [...data].sort((a, b) => {
+          const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return da - db;
+        });
+
+        const normalized = sorted.map((p) => {
           const created = p.createdAt ? new Date(p.createdAt) : new Date();
           const dateLabel = created.toLocaleDateString("en-US", {
             month: "short",
@@ -203,25 +234,25 @@ function FriendsPage() {
 
         setFeed(normalized);
       } catch (err) {
-        console.error("Failed to load forum posts", err);
+        console.error("Failed to load friends posts", err);
       }
     };
 
     loadPosts();
-  }, []);
-
-  const userName = currentUser?.name || "You";
-  const userId = currentUser?._id;
+  }, [userId]);
 
   const handleToggleLike = async (postId) => {
     if (!userId) return;
 
     try {
-      const res = await fetch(`${API_BASE_URL}/forum/posts/${postId}/upvote`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId }),
-      });
+      const res = await fetch(
+        `${API_BASE_URL}/forum/posts/${postId}/upvote`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId }),
+        }
+      );
       const data = await res.json();
       if (!res.ok || !data.success) {
         console.error("Failed to upvote:", data);
@@ -291,7 +322,7 @@ function FriendsPage() {
     }
   };
 
-  // 根据 dateLabel 分组
+  // 根据 dateLabel 分组（顺序保持 sorted 后的顺序：最早日期在上）
   const grouped = feed.reduce((acc, post) => {
     const key = post.dateLabel || "Recent";
     if (!acc[key]) acc[key] = [];
@@ -354,95 +385,107 @@ function FriendsPage() {
           pb: 8,
         }}
       >
-        {dateSections.map(([dateLabel, posts]) => (
-          <Box key={dateLabel} sx={{ mb: 2.5 }}>
-            {/* 日期标题 */}
-            <Typography
-              variant="body2"
-              sx={{
-                fontWeight: 600,
-                color: "#111827",
-                mb: 1.2,
-              }}
-            >
-              {dateLabel}
-            </Typography>
+        {dateSections.length === 0 ? (
+          <Typography
+            variant="body2"
+            sx={{ color: "#6B7280", mt: 2, textAlign: "center" }}
+          >
+            No activity from you or your friends yet.
+          </Typography>
+        ) : (
+          dateSections.map(([dateLabel, posts]) => (
+            <Box key={dateLabel} sx={{ mb: 2.5 }}>
+              {/* 日期标题 */}
+              <Typography
+                variant="body2"
+                sx={{
+                  fontWeight: 600,
+                  color: "#111827",
+                  mb: 1.2,
+                }}
+              >
+                {dateLabel}
+              </Typography>
 
-            {/* 每个帖子一行：左边时间轴，右边卡片 */}
-            {posts.map((post, index) => {
-              const isLast = index === posts.length - 1;
+              {posts.map((post, index) => {
+                const isLast = index === posts.length - 1;
 
-              const comments = (post.comments || []).map((c) => ({
-                id: c.id,
-                authorName: c.userName || "Anonymous",
-                text: c.text,
-              }));
+                const comments = (post.comments || []).map((c) => ({
+                  id: c.id,
+                  authorName: c.userName || "Anonymous",
+                  text: c.text,
+                }));
 
-              const liked =
-                !!userId &&
-                (post.upvotedBy || []).some(
-                  (u) => u.toString && u.toString() === userId
-                );
+                const liked =
+                  !!userId &&
+                  (post.upvotedBy || []).some((u) => {
+                    const val = u?._id || u;
+                    return val.toString() === userId;
+                  });
 
-              return (
-                <Box
-                  key={post.id}
-                  sx={{
-                    display: "flex",
-                    alignItems: "stretch",
-                  }}
-                >
-                  {/* 时间轴 */}
+                return (
                   <Box
+                    key={post.id}
                     sx={{
-                      width: 32,
                       display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      mr: 1,
+                      alignItems: "stretch",
                     }}
                   >
-                    {/* 圆点 */}
+                    {/* 时间轴 */}
                     <Box
                       sx={{
-                        width: 14,
-                        height: 14,
-                        borderRadius: "50%",
-                        border: "2px solid #4B5563",
-                        bgcolor: "#FFFFFF",
-                        mb: 0.5,
+                        width: 32,
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        mr: 1,
                       }}
-                    />
-                    {/* 虚线 */}
-                    {!isLast && (
+                    >
                       <Box
                         sx={{
-                          flexGrow: 1,
-                          borderLeft: "2px dashed #D1D5DB",
-                          mt: 0.2,
+                          width: 14,
+                          height: 14,
+                          borderRadius: "50%",
+                          border: "2px solid #4B5563",
+                          bgcolor: "#FFFFFF",
+                          mb: 0.5,
                         }}
                       />
-                    )}
-                  </Box>
+                      {!isLast && (
+                        <Box
+                          sx={{
+                            flexGrow: 1,
+                            borderLeft: "2px dashed #D1D5DB",
+                            mt: 0.2,
+                          }}
+                        />
+                      )}
+                    </Box>
 
-                  {/* 帖子卡片 */}
-                  <FriendPostCard
-                    content={post.content}
-                    authorName={post.authorName}
-                    hasMedia={post.hasMedia}
-                    liked={liked}
-                    likeCount={post.likeCount}
-                    commentValue={commentDrafts[post.id] || ""}
-                    comments={comments}
-                    onChangeComment={(v) => handleChangeComment(post.id, v)}
-                    onLike={() => handleToggleLike(post.id)}
-                    onSubmitComment={() => handleSubmitComment(post.id)}
-                  />
-                </Box>
-              );
-            })}
-          </Box>
-        ))}
+                    {/* 帖子卡片 */}
+                    <FriendPostCard
+                      content={post.content}
+                      authorName={post.authorName}
+                      imageUrl={post.imageUrl}
+                      hasMedia={post.hasMedia}
+                      liked={liked}
+                      likeCount={post.likeCount}
+                      commentValue={commentDrafts[post.id] || ""}
+                      comments={comments}
+                      onChangeComment={(v) =>
+                        handleChangeComment(post.id, v)
+                      }
+                      onLike={() => handleToggleLike(post.id)}
+                      onSubmitComment={() =>
+                        handleSubmitComment(post.id)
+                      }
+                    />
+                  </Box>
+                );
+              })}
+            </Box>
+          ))
+        )}
       </Box>
 
       <BottomNavBar />
