@@ -572,7 +572,7 @@ function HomePage() {
         {/* 排行列表（点击“Show next 5” 展开更多） */}
         <Box
           sx={{
-            borderRadius: 16,
+            borderRadius: 2,
             bgcolor: "rgba(0,0,0,0.12)",
             p: 0.8,
           }}
