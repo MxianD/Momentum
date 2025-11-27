@@ -11,7 +11,6 @@ import {
   DialogActions,
   Button,
   CircularProgress,
-  Stack,
   Fab,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
@@ -41,6 +40,9 @@ function ForumPage() {
   const [selectedPost, setSelectedPost] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadingError, setLoadingError] = useState("");
+
+  // 每条帖子的评论输入内容
+  const [commentDrafts, setCommentDrafts] = useState({});
 
   // 当前用户
   const [currentUser, setCurrentUser] = useState(null);
@@ -76,16 +78,17 @@ function ForumPage() {
         throw new Error(`Request failed: ${res.status}`);
       }
 
-      // 只保留非 checkin 的知识帖
-      const knowledgeOnly = (data || [])
+      // ❗ 关键：过滤掉 checkin 帖子，其他全部展示
+      const visiblePosts = (data || [])
         .filter((p) => p.source !== "checkin")
+        // 最新在最上面
         .sort((a, b) => {
           const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
           const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-          return db - da; // 最新在最上面
+          return db - da;
         });
 
-      setPosts(knowledgeOnly);
+      setPosts(visiblePosts);
     } catch (err) {
       console.error("Failed to load posts:", err);
       setLoadingError("Failed to load posts from server.");
@@ -167,11 +170,14 @@ function ForumPage() {
       return;
     }
     try {
-      const res = await fetch(`${API_BASE_URL}/forum/posts/${id}/downvote`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId }),
-      });
+      const res = await fetch(
+        `${API_BASE_URL}/forum/posts/${id}/downvote`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId }),
+        }
+      );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Downvote failed");
 
@@ -245,6 +251,44 @@ function ForumPage() {
     }
   };
 
+  // 评论输入
+  const handleChangeComment = (postId, value) => {
+    setCommentDrafts((prev) => ({ ...prev, [postId]: value }));
+  };
+
+  // 发送评论
+  const handleSubmitComment = async (postId) => {
+    const text = (commentDrafts[postId] || "").trim();
+    if (!text || !userId) return;
+
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/forum/posts/${postId}/comments`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId, text }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        console.error("Failed to send comment:", data);
+        alert("Failed to send comment");
+        return;
+      }
+
+      const updatedPost = data.post;
+      if (updatedPost) {
+        applyPostUpdate(updatedPost);
+      }
+
+      setCommentDrafts((prev) => ({ ...prev, [postId]: "" }));
+    } catch (err) {
+      console.error("Failed to send comment", err);
+      alert("Network error. Please try again.");
+    }
+  };
+
   // 搜索过滤
   const filteredPosts = useMemo(() => {
     if (!search.trim()) return posts;
@@ -262,7 +306,7 @@ function ForumPage() {
     if (file) setNewFile(file);
   };
 
-  // 发布知识贴
+  // 发布知识帖 / 经验贴
   const handleCreatePost = async () => {
     if (!userId) {
       alert("请先登录再发帖");
@@ -286,7 +330,7 @@ function ForumPage() {
         formData.append("categories", newCategories.trim());
       }
       if (newFile) {
-        formData.append("image", newFile); // 对应后端 multer 字段名
+        formData.append("image", newFile);
       }
 
       const res = await fetch(`${API_BASE_URL}/forum/posts`, {
@@ -302,7 +346,6 @@ function ForumPage() {
         return;
       }
 
-      // 重新拉取帖子列表
       await fetchPosts();
 
       setPosting(false);
@@ -375,10 +418,7 @@ function ForumPage() {
       >
         {loading && (
           <Box sx={{ display: "flex", justifyContent: "center", mt: 4 }}>
-            <CircularProgress
-              size={28}
-              sx={{ color: "#5E7D28" }}
-            />
+            <CircularProgress size={28} sx={{ color: "#5E7D28" }} />
           </Box>
         )}
 
@@ -402,6 +442,23 @@ function ForumPage() {
               (p.bookmarks ?? 0) >= 3 ||
               (p.comments?.length ?? 0) >= 3;
 
+            // 解析 category tags（字符串 or 数组）
+            const categoryTags = (() => {
+              const raw = p.categories;
+              if (!raw) return [];
+              if (Array.isArray(raw)) return raw;
+              return raw
+                .split(",")
+                .map((t) => t.trim())
+                .filter(Boolean);
+            })();
+
+            const comments = (p.comments || []).map((c) => ({
+              id: c.id,
+              authorName: c.userName || "Anonymous",
+              text: c.text,
+            }));
+
             return (
               <ForumPostCard
                 key={p._id}
@@ -414,6 +471,11 @@ function ForumPage() {
                 downvotesCount={p.downvotes ?? 0}
                 bookmarksCount={p.bookmarks ?? 0}
                 isGoodPost={isGoodPost}
+                categories={categoryTags}
+                comments={comments}
+                commentValue={commentDrafts[p._id] || ""}
+                onCommentChange={(v) => handleChangeComment(p._id, v)}
+                onSubmitComment={() => handleSubmitComment(p._id)}
                 upvoted={state.upvoted}
                 downvoted={state.downvoted}
                 bookmarked={state.bookmarked}
@@ -427,7 +489,7 @@ function ForumPage() {
 
         {!loading && !loadingError && filteredPosts.length === 0 && (
           <Typography variant="body2" sx={{ color: "#6B7280", mt: 2 }}>
-            No knowledge posts yet. Be the first to share your experience!
+            No posts yet. Be the first to share your experience!
           </Typography>
         )}
       </Box>
@@ -439,7 +501,7 @@ function ForumPage() {
         sx={{
           position: "fixed",
           right: 24,
-          bottom: 80, // 底部导航上方一点
+          bottom: 80,
           bgcolor: "#5E7D28",
           "&:hover": { bgcolor: "#46611F" },
         }}
@@ -449,7 +511,7 @@ function ForumPage() {
 
       <BottomNavBar />
 
-      {/* 帖子详情弹窗 */}
+      {/* 帖子详情弹窗（简单版） */}
       <Dialog
         open={!!selectedPost}
         onClose={handleCloseDialog}
@@ -480,8 +542,8 @@ function ForumPage() {
             variant="body2"
             sx={{ color: "#6B7280", mb: 1.5 }}
           >
-            Tell others what worked for you. Steps, tips, or even what
-            failed.
+            Title (optional), body text is required. You can attach a
+            photo or short video.
           </Typography>
 
           <TextField
