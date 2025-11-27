@@ -644,7 +644,7 @@ function HomePage() {
 
         <Box
           sx={{
-            borderRadius: 16,
+            borderRadius: 2,
             bgcolor: "rgba(0,0,0,0.12)",
             p: 0.8,
           }}
