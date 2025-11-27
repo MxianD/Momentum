@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 import multer from "multer";
 import path from "path";
 import ForumPost from "../models/ForumPost.js";
-
+import User from "../models/User.js"; 
 const router = express.Router();
 
 /** ---------- 上传配置 ---------- */
@@ -536,6 +536,50 @@ router.get("/ranking/total", async (req, res) => {
   } catch (err) {
     console.error("Error generating total ranking:", err);
     res.status(500).json({ error: "Failed to generate total ranking" });
+  }
+});
+/**
+ * GET /api/forum/posts/friends/:userId
+ * 返回“我自己 + 我好友”的帖子
+ */
+router.get("/posts/friends/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const user = await User.findById(userId).select("friends").lean();
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const friendIds = (user.friends || []).map((id) => id.toString());
+    const allIds = [...friendIds, userId];
+
+    const posts = await ForumPost.find({
+      author: { $in: allIds },
+    })
+      .sort({ createdAt: -1 })
+      .populate("author", "name")
+      .populate("comments.user", "name");
+
+    const mapped = posts.map((p) => {
+      const obj = p.toObject();
+      return {
+        ...obj,
+        authorName: obj.author?.name || "Anonymous",
+        upvotes: obj.upvotes ?? 0,
+        downvotes: obj.downvotes ?? 0,
+        bookmarks: obj.bookmarks ?? 0,
+        comments: (obj.comments || []).map((c) => ({
+          ...c,
+          userName: c.user?.name || "Anonymous",
+        })),
+      };
+    });
+
+    res.json(mapped);
+  } catch (err) {
+    console.error("Error fetching friends posts:", err);
+    res.status(500).json({ error: "Failed to fetch posts" });
   }
 });
 

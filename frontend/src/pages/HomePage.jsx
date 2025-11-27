@@ -19,6 +19,7 @@ import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import FlashOnIcon from "@mui/icons-material/FlashOn";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
+import PersonAddAlt1Icon from "@mui/icons-material/PersonAddAlt1";
 
 import BottomNavBar from "../components/BottomNavBar.jsx";
 
@@ -53,9 +54,7 @@ function RankingRow({ rank, value, name, color, isCurrentUser }) {
         px: 0.8,
         py: 0.4,
         borderRadius: 999,
-        bgcolor: isCurrentUser
-          ? "rgba(0,0,0,0.18)"
-          : "transparent",
+        bgcolor: isCurrentUser ? "rgba(0,0,0,0.18)" : "transparent",
       }}
     >
       <Typography
@@ -287,7 +286,12 @@ function HomePage() {
 
   // 总排行榜
   const [ranking, setRanking] = useState([]);
-  const [visibleCount, setVisibleCount] = useState(5); // 每次多展示 5 个
+  const [visibleCount, setVisibleCount] = useState(5);
+
+  // Add friends
+  const [addFriendsOpen, setAddFriendsOpen] = useState(false);
+  const [allUsers, setAllUsers] = useState([]);
+  const [friends, setFriends] = useState([]);
 
   const activeGoal = goals.find((g) => g.id === activeGoalId) || null;
 
@@ -319,12 +323,12 @@ function HomePage() {
         const data = await res.json(); // UserChallenge[]
 
         const challengeGoals = data.map((uc) => ({
-          id: uc._id, // 用 UserChallenge id 作为 goal id
+          id: uc._id,
           challengeId: uc.challenge._id,
           title: uc.challenge.title,
           subtitle: "Challenge with your friends",
           streak: uc.streak,
-          progressText: "4/7", // 先写死，之后可以算真实进度
+          progressText: "4/7",
           checkedInToday: uc.checkedInToday,
           lastNote: uc.lastNote,
           isSystem: false,
@@ -354,7 +358,7 @@ function HomePage() {
         const data = await res.json();
         const list = data.ranking || [];
         setRanking(list);
-        setVisibleCount(5); // 每次加载时重置可见数量
+        setVisibleCount(5);
       } catch (err) {
         console.error("Error loading ranking", err);
       }
@@ -362,6 +366,34 @@ function HomePage() {
 
     loadRanking();
   }, []);
+
+  // 拉取所有用户 & 当前用户的好友
+  useEffect(() => {
+    if (!userId) return;
+
+    const loadUsersAndFriends = async () => {
+      try {
+        const [allRes, friendsRes] = await Promise.all([
+          fetch(`${API_BASE_URL}/users/all`),
+          fetch(`${API_BASE_URL}/users/${userId}/friends`),
+        ]);
+
+        if (allRes.ok) {
+          const u = await allRes.json();
+          setAllUsers(u);
+        }
+
+        if (friendsRes.ok) {
+          const f = await friendsRes.json();
+          setFriends(f.friends || []);
+        }
+      } catch (err) {
+        console.error("Error loading users/friends:", err);
+      }
+    };
+
+    loadUsersAndFriends();
+  }, [userId]);
 
   const handleOpenCheckInDialog = (id) => {
     const goal = goals.find((g) => g.id === id);
@@ -383,6 +415,26 @@ function HomePage() {
     if (file) setCheckInImage(file);
   };
 
+  // 添加好友
+  const handleAddFriend = async (friendId) => {
+    if (!userId || !friendId) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/users/${userId}/friends`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ friendId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        console.error("Failed to add friend", data);
+        return;
+      }
+      setFriends(data.friends || []);
+    } catch (err) {
+      console.error("Error adding friend:", err);
+    }
+  };
+
   // Check in：对系统 goal，用 Forum；对 challenge goal，调用 /challenges/:id/checkin（都支持图片）
   const handleConfirmCheckIn = async () => {
     if (!activeGoalId || !checkInNote.trim()) return;
@@ -393,7 +445,6 @@ function HomePage() {
       setPosting(true);
 
       if (!goal.isSystem) {
-        // challenge-based goal：走后端 /challenges/:id/checkin（multipart）
         if (!userId || !goal.challengeId) {
           alert("User or challenge missing.");
           setPosting(false);
@@ -436,7 +487,6 @@ function HomePage() {
           })
         );
       } else {
-        // 系统 goal：用 Forum 发一条帖（multipart）
         if (!userId) {
           alert("User missing.");
           setPosting(false);
@@ -506,6 +556,8 @@ function HomePage() {
     );
   };
 
+  const friendsIds = friends.map((f) => f._id);
+
   return (
     <Box
       sx={{
@@ -514,7 +566,7 @@ function HomePage() {
         flexDirection: "column",
       }}
     >
-      {/* 顶部绿色区域 + 总排行榜 */}
+      {/* 顶部绿色区域 + 总排行榜 + Add friends 按钮 */}
       <Box
         sx={{
           bgcolor: "#516E1F",
@@ -527,16 +579,42 @@ function HomePage() {
           boxShadow: "0 12px 25px rgba(0,0,0,0.25)",
         }}
       >
-        <Typography
-          variant="h6"
+        <Box
           sx={{
-            fontWeight: 700,
-            fontSize: 22,
-            mb: 1.2,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            mb: 1,
           }}
         >
-          Hello, {displayName}!
-        </Typography>
+          <Typography
+            variant="h6"
+            sx={{
+              fontWeight: 700,
+              fontSize: 22,
+            }}
+          >
+            Hello, {displayName}!
+          </Typography>
+
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<PersonAddAlt1Icon sx={{ fontSize: 16 }} />}
+            onClick={() => setAddFriendsOpen(true)}
+            sx={{
+              textTransform: "none",
+              borderRadius: 999,
+              borderColor: "rgba(255,255,255,0.8)",
+              color: "rgba(255,255,255,0.9)",
+              paddingY: 0.4,
+              paddingX: 1.4,
+              fontSize: 12,
+            }}
+          >
+            Add friends
+          </Button>
+        </Box>
 
         <Typography
           variant="body2"
@@ -550,7 +628,6 @@ function HomePage() {
           Total ranking
         </Typography>
 
-        {/* 显示“我的位置” */}
         {myRank && myPoints != null && (
           <Typography
             variant="caption"
@@ -560,19 +637,14 @@ function HomePage() {
               mb: 1,
             }}
           >
-            You are{" "}
-            <strong>
-              #{myRank}
-            </strong>{" "}
-            with{" "}
+            You are <strong>#{myRank}</strong> with{" "}
             <strong>{myPoints}</strong> pts.
           </Typography>
         )}
 
-        {/* 排行列表（点击“Show next 5” 展开更多） */}
         <Box
           sx={{
-            borderRadius: 2,
+            borderRadius: 16,
             bgcolor: "rgba(0,0,0,0.12)",
             p: 0.8,
           }}
@@ -704,7 +776,6 @@ function HomePage() {
             sx={{ mb: 2 }}
           />
 
-          {/* 图片上传 & 预览 */}
           <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
             <Button variant="outlined" component="label" size="small">
               Upload image
@@ -743,6 +814,90 @@ function HomePage() {
           >
             {posting ? "Posting..." : "Post progress"}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Add friends 弹窗 */}
+      <Dialog
+        open={addFriendsOpen}
+        onClose={() => setAddFriendsOpen(false)}
+        fullWidth
+      >
+        <DialogTitle>Add friends</DialogTitle>
+        <DialogContent dividers>
+          {allUsers.map((u) => {
+            const isSelf = u._id === userId;
+            const isFriend = friendsIds.includes(u._id);
+
+            return (
+              <Box
+                key={u._id}
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  py: 1,
+                }}
+              >
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Avatar
+                    sx={{
+                      width: 28,
+                      height: 28,
+                      bgcolor: "#9CA3AF",
+                      fontSize: 14,
+                    }}
+                  >
+                    {u.name?.[0] || "U"}
+                  </Avatar>
+                  <Typography variant="body2">{u.name}</Typography>
+                </Stack>
+
+                {isSelf ? (
+                  <Typography
+                    variant="caption"
+                    sx={{ color: "#6B7280" }}
+                  >
+                    You
+                  </Typography>
+                ) : isFriend ? (
+                  <Button
+                    size="small"
+                    disabled
+                    sx={{
+                      textTransform: "none",
+                      borderRadius: 999,
+                      bgcolor: "#E5E7EB",
+                      color: "#4B5563",
+                    }}
+                  >
+                    Added
+                  </Button>
+                ) : (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => handleAddFriend(u._id)}
+                    sx={{
+                      textTransform: "none",
+                      borderRadius: 999,
+                    }}
+                  >
+                    Add
+                  </Button>
+                )}
+              </Box>
+            );
+          })}
+
+          {allUsers.length === 0 && (
+            <Typography variant="body2" sx={{ color: "#6B7280" }}>
+              No users yet.
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAddFriendsOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
 
