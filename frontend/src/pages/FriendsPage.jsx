@@ -21,10 +21,14 @@ import BottomNavBar from "../components/BottomNavBar.jsx";
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
 
+// 把 /api 去掉，得到后端根域名，用来拼接图片 URL
+const API_ORIGIN = API_BASE_URL.replace(/\/api$/, "");
+
 // 单个帖子卡片
 function FriendPostCard({
   content,
   authorName,
+  imageUrl,
   hasMedia,
   liked,
   likeCount,
@@ -53,15 +57,28 @@ function FriendPostCard({
         border: "1px solid #E5E7EB",
       }}
     >
-      {/* 图片区域 */}
-      {hasMedia && (
+      {/* 图片区域：有 imageUrl 就显示真实图片，否则按 hasMedia 显示灰框 */}
+      {imageUrl ? (
+        <Box
+          component="img"
+          src={`${API_ORIGIN}${imageUrl}`}
+          alt="post media"
+          sx={{
+            width: "100%",
+            height: 130,
+            objectFit: "cover",
+            display: "block",
+            bgcolor: "#E5E5E5",
+          }}
+        />
+      ) : hasMedia ? (
         <Box
           sx={{
             height: 130,
             bgcolor: "#E5E5E5",
           }}
         />
-      )}
+      ) : null}
 
       {/* 文本 + 底部区域 */}
       <Box sx={{ px: 1.8, pt: 1.2, pb: 1.4 }}>
@@ -179,6 +196,8 @@ function FriendsPage() {
     }
   }, []);
 
+  const userId = currentUser?._id;
+
   // 拉取帖子列表
   useEffect(() => {
     const loadPosts = async () => {
@@ -209,9 +228,6 @@ function FriendsPage() {
 
     loadPosts();
   }, []);
-
-  const userName = currentUser?.name || "You";
-  const userId = currentUser?._id;
 
   const handleToggleLike = async (postId) => {
     if (!userId) return;
@@ -383,9 +399,10 @@ function FriendsPage() {
 
               const liked =
                 !!userId &&
-                (post.upvotedBy || []).some(
-                  (u) => u.toString && u.toString() === userId
-                );
+                (post.upvotedBy || []).some((u) => {
+                  const val = u?._id || u; // 可能是 ObjectId 对象，也可能是字符串
+                  return val.toString() === userId;
+                });
 
               return (
                 <Box
@@ -432,6 +449,7 @@ function FriendsPage() {
                   <FriendPostCard
                     content={post.content}
                     authorName={post.authorName}
+                    imageUrl={post.imageUrl}
                     hasMedia={post.hasMedia}
                     liked={liked}
                     likeCount={post.likeCount}
