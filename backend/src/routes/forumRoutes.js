@@ -449,5 +449,94 @@ router.get("/ranking/today", async (req, res) => {
     res.status(500).json({ error: "Failed to generate ranking" });
   }
 });
+/**
+ * GET /api/forum/ranking/total
+ * 计算“总积分榜”：基于所有历史帖子
+ */
+router.get("/ranking/total", async (req, res) => {
+  try {
+    const posts = await ForumPost.find().populate("author", "name");
+
+    const taskPoints = {
+      "Stay hydrated": 5,
+      "Everyday Meditation": 6,
+      "Morning Stretch": 3,
+    };
+
+    const scoreMap = new Map();
+
+    const ensureUser = (post) => {
+      if (!post.author) return null;
+      const uid = post.author._id.toString();
+      if (!scoreMap.has(uid)) {
+        scoreMap.set(uid, {
+          userId: uid,
+          name: post.author.name || "Anonymous",
+          checkinPoints: 0,
+          likeEvents: 0,
+          knowledgePosts: 0,
+          bonusPoints: 0,
+        });
+      }
+      return scoreMap.get(uid);
+    };
+
+    for (const p of posts) {
+      const userScore = ensureUser(p);
+      if (!userScore) continue;
+      const uid = userScore.userId;
+
+      // 1) 打卡积分
+      if (p.source === "checkin") {
+        userScore.checkinPoints += taskPoints[p.title] || 0;
+      }
+
+      // 2) 点赞积分（不限天数）
+      const othersLikes = (p.upvotedBy || []).filter(
+        (u) => u.toString() !== uid
+      ).length;
+      userScore.likeEvents += othersLikes;
+
+      // 3) 知识贴
+      if (p.isKnowledge) {
+        userScore.knowledgePosts += 1;
+      }
+
+      // 4) good post bonus
+      const upCount = (p.upvotedBy || []).length;
+      const bookmarkCount = (p.bookmarkedBy || []).length;
+
+      if (upCount >= 5 || bookmarkCount >= 3) {
+        userScore.bonusPoints += 10;
+      }
+    }
+
+    const ranking = Array.from(scoreMap.values())
+      .map((s) => {
+        // total ranking 不需要每日 cap，所以直接累积
+        const likePts = s.likeEvents;
+        const knowledgePts = s.knowledgePosts * 5;
+        const total = s.checkinPoints + likePts + knowledgePts + s.bonusPoints;
+
+        return {
+          userId: s.userId,
+          name: s.name,
+          totalPoints: total,
+          breakdown: {
+            checkins: s.checkinPoints,
+            likes: likePts,
+            knowledge: knowledgePts,
+            bonus: s.bonusPoints,
+          },
+        };
+      })
+      .sort((a, b) => b.totalPoints - a.totalPoints);
+
+    res.json({ ranking });
+  } catch (err) {
+    console.error("Error generating total ranking:", err);
+    res.status(500).json({ error: "Failed to generate total ranking" });
+  }
+});
 
 export default router;

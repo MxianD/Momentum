@@ -76,12 +76,7 @@ function RankingRow({ rank, value, name, color }) {
           }}
         />
       </Box>
-      <Stack
-        direction="row"
-        spacing={0.4}
-        alignItems="center"
-        sx={{ ml: 0.5 }}
-      >
+      <Stack direction="row" spacing={0.4} alignItems="center" sx={{ ml: 0.5 }}>
         <Typography
           variant="body2"
           sx={{
@@ -265,9 +260,7 @@ function HomePage() {
 
     const loadJoined = async () => {
       try {
-        const res = await fetch(
-          `${API_BASE_URL}/challenges/joined/${userId}`
-        );
+        const res = await fetch(`${API_BASE_URL}/challenges/joined/${userId}`);
         if (!res.ok) {
           console.error("Failed to load user challenges");
           return;
@@ -302,7 +295,8 @@ function HomePage() {
   useEffect(() => {
     const loadRanking = async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/forum/ranking/today`);
+        const res = await fetch(`${API_BASE_URL}/forum/ranking/total`);
+
         if (!res.ok) {
           console.error("Failed to load ranking");
           return;
@@ -452,6 +446,7 @@ function HomePage() {
       }}
     >
       {/* 顶部绿色区域 + 今日排行榜 */}
+      {/* 顶部绿色区域 + 总排行榜 */}
       <Box
         sx={{
           bgcolor: "#516E1F",
@@ -484,7 +479,7 @@ function HomePage() {
             fontSize: 13,
           }}
         >
-          Today&apos;s ranking
+          Total ranking
         </Typography>
 
         {ranking.slice(0, 3).map((r, index) => (
@@ -498,11 +493,8 @@ function HomePage() {
         ))}
 
         {ranking.length === 0 && (
-          <Typography
-            variant="caption"
-            sx={{ color: "rgba(255,255,255,0.8)" }}
-          >
-            No activity yet today.
+          <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.8)" }}>
+            No ranking data yet.
           </Typography>
         )}
       </Box>
@@ -561,12 +553,8 @@ function HomePage() {
           {activeGoal ? `Check in - ${activeGoal.title}` : "Check in"}
         </DialogTitle>
         <DialogContent dividers>
-          <Typography
-            variant="body2"
-            sx={{ mb: 1.5, color: "#6B7280" }}
-          >
-            Share your progress for today. What did you do for this
-            challenge?
+          <Typography variant="body2" sx={{ mb: 1.5, color: "#6B7280" }}>
+            Share your progress for today. What did you do for this challenge?
           </Typography>
           <TextField
             multiline
