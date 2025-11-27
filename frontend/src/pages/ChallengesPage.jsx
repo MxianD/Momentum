@@ -17,6 +17,34 @@ import RightSidebar from "../components/RightSidebar.jsx";
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
 
+// 原来那 3 条本地示例挑战，当作 fallback
+const fallbackChallenges = [
+  {
+    id: 1,
+    title: "7-day focus challenge",
+    description: "Commit to 2 hours of distraction-free work every day.",
+    progress: 40,
+    daysLeft: 3,
+    tag: "Productivity",
+  },
+  {
+    id: 2,
+    title: "Daily UI sketch",
+    description: "Create a tiny UI sketch every day for 14 days.",
+    progress: 70,
+    daysLeft: 5,
+    tag: "Design",
+  },
+  {
+    id: 3,
+    title: "Morning writing sprint",
+    description: "Write 200 words before 9 AM, for 10 days in a row.",
+    progress: 10,
+    daysLeft: 9,
+    tag: "Writing",
+  },
+];
+
 function ChallengesPage() {
   const [challenges, setChallenges] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -24,7 +52,7 @@ function ChallengesPage() {
   const [joiningId, setJoiningId] = useState(null);
   const [joinedIds, setJoinedIds] = useState([]);
 
-  // 当前用户（用和其他页面一样的 localStorage）
+  // 当前用户（跟其他页面一样从 localStorage 取）
   const [currentUser, setCurrentUser] = useState(null);
   useEffect(() => {
     try {
@@ -51,10 +79,18 @@ function ChallengesPage() {
           throw new Error("Failed to fetch challenges");
         }
 
-        setChallenges(data || []);
+        if (Array.isArray(data) && data.length > 0) {
+          // 有真实数据：用真实数据
+          setChallenges(data);
+        } else {
+          // 没有任何 friend challenge：用本地示例
+          setChallenges(fallbackChallenges);
+        }
       } catch (err) {
         console.error(err);
         setError("Failed to load challenges from your friends.");
+        // 出错也展示本地示例，至少页面不会空白
+        setChallenges(fallbackChallenges);
       } finally {
         setLoading(false);
       }
@@ -63,7 +99,15 @@ function ChallengesPage() {
     fetchFriendsChallenges();
   }, []);
 
-  const handleJoin = async (challengeId) => {
+  const handleJoin = async (challenge) => {
+    const challengeId = challenge._id; // 只有真实数据才有 _id
+
+    // 如果是示例 challenge，没有 _id，直接提示
+    if (!challengeId) {
+      alert("This is just a demo challenge. Real friend challenges will appear here once created in backend.");
+      return;
+    }
+
     if (!userId) {
       alert("请先登录再加入挑战");
       return;
@@ -87,7 +131,6 @@ function ChallengesPage() {
         return;
       }
 
-      // 本地标记为已加入
       setJoinedIds((prev) =>
         prev.includes(challengeId) ? prev : [...prev, challengeId]
       );
@@ -110,13 +153,6 @@ function ChallengesPage() {
           <Typography variant="h6" fontWeight={700}>
             Challenges from your friends
           </Typography>
-          {/* 以后如果要做创建 friend challenge 的表单，可以用这个按钮 */}
-          {/* <Button
-            variant="contained"
-            sx={{ borderRadius: 999, textTransform: "none" }}
-          >
-            Create challenge
-          </Button> */}
         </Box>
 
         {loading && (
@@ -126,27 +162,39 @@ function ChallengesPage() {
         )}
 
         {!loading && error && (
-          <Typography variant="body2" color="error" sx={{ mt: 2 }}>
+          <Typography variant="body2" color="error" sx={{ mt: 1, mb: 1 }}>
             {error}
           </Typography>
         )}
 
-        {!loading && !error && challenges.length === 0 && (
-          <Typography variant="body2" sx={{ mt: 2 }}>
-            No challenges from your friends yet. Maybe create one together!
-          </Typography>
-        )}
-
         {!loading &&
-          !error &&
           challenges.map((c) => {
-            const joined = joinedIds.includes(c._id);
-            // 如果有 time 字段，这里简单当成“天数”
-            const totalDays = c.time || 7;
+            const id = c._id || c.id;
+            const title = c.title;
+            const description = c.description;
+            const isReal = !!c._id; // 真实数据 or 示例数据
+
+            // 真实挑战：用 time 字段表示总天数
+            // 示例挑战：用 progress/daysLeft 渲染一个虚拟进度
+            let progress = 0;
+            let daysLeftText = "";
+
+            if (isReal) {
+              // 真实的 friend challenge，目前还没有算法，就用 0% + 显示 time
+              const totalDays = c.time || 7;
+              progress = 0;
+              daysLeftText = `Duration: ${totalDays} days`;
+            } else {
+              // 示例数据
+              progress = c.progress;
+              daysLeftText = `${c.progress}% · ${c.daysLeft} days left`;
+            }
+
+            const joined = isReal && joinedIds.includes(c._id);
 
             return (
               <Paper
-                key={c._id}
+                key={id}
                 elevation={0}
                 sx={{
                   p: 2,
@@ -164,38 +212,39 @@ function ChallengesPage() {
                   }}
                 >
                   <Typography variant="subtitle1" fontWeight={600}>
-                    {c.title}
+                    {title}
                   </Typography>
-                  <Chip label="Friend challenge" size="small" />
+                  <Chip
+                    label={isReal ? "Friend challenge" : c.tag || "Demo"}
+                    size="small"
+                  />
                 </Box>
 
                 <Typography variant="body2" color="text.secondary" mb={1}>
-                  {c.description}
+                  {description}
                 </Typography>
 
-                {/* 简单的进度条：这里只是示意，真正进度在 HomePage 用 UserChallenge 算 */}
                 <Stack spacing={0.5} sx={{ mb: 1 }}>
                   <LinearProgress
                     variant="determinate"
-                    value={0}
+                    value={progress}
                     sx={{ borderRadius: 999, height: 6 }}
                   />
                   <Typography variant="caption" color="text.secondary">
-                    Duration: {totalDays} days
+                    {daysLeftText}
                   </Typography>
                 </Stack>
 
                 <Button
                   size="small"
-                  variant={joined ? "outlined" : "contained"}
-                  sx={{
-                    textTransform: "none",
-                    borderRadius: 999,
-                  }}
-                  onClick={() => handleJoin(c._id)}
-                  disabled={joiningId === c._id || joined}
+                  variant={isReal ? (joined ? "outlined" : "contained") : "outlined"}
+                  sx={{ textTransform: "none", borderRadius: 999 }}
+                  onClick={() => handleJoin(c)}
+                  disabled={isReal && (joiningId === c._id || joined)}
                 >
-                  {joined
+                  {!isReal
+                    ? "Demo challenge"
+                    : joined
                     ? "Joined"
                     : joiningId === c._id
                     ? "Joining..."
