@@ -1,6 +1,9 @@
+// backend/src/routes/challengeRoutes.js
 import express from "express";
 import multer from "multer";
 import path from "path";
+import fs from "fs";
+
 import Challenge from "../models/Challenge.js";
 import UserChallenge from "../models/UserChallenge.js";
 import ForumPost from "../models/ForumPost.js";
@@ -15,7 +18,13 @@ function isSameDay(d1, d2) {
   );
 }
 
-/** ---------- 上传配置（和 forumRoutes 一样） ---------- */
+/** ---------- 上传配置（与 forumRoutes 一致） ---------- */
+
+// 确保 uploads 目录存在
+const uploadDir = "uploads";
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -27,9 +36,13 @@ const storage = multer.diskStorage({
     cb(null, unique + ext);
   },
 });
+
 const upload = multer({ storage });
 
-// GET /api/challenges/friends
+/**
+ * GET /api/challenges/friends
+ * 获取“朋友之间的挑战”
+ */
 router.get("/friends", async (req, res) => {
   try {
     const challenges = await Challenge.find({ type: "friend" }).sort({
@@ -42,6 +55,10 @@ router.get("/friends", async (req, res) => {
   }
 });
 
+/**
+ * GET /api/challenges/joined/:userId
+ * 获取用户加入的所有挑战
+ */
 router.get("/joined/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
@@ -70,7 +87,10 @@ router.get("/joined/:userId", async (req, res) => {
   }
 });
 
-// POST /api/challenges/:id/join
+/**
+ * POST /api/challenges/:id/join
+ * 用户加入某个 challenge
+ */
 router.post("/:id/join", async (req, res) => {
   try {
     const { id } = req.params; // challengeId
@@ -85,6 +105,7 @@ router.post("/:id/join", async (req, res) => {
       return res.status(404).json({ error: "Challenge not found" });
     }
 
+    // 如果已存在则直接返回
     let uc = await UserChallenge.findOne({
       user: userId,
       challenge: id,
@@ -105,13 +126,21 @@ router.post("/:id/join", async (req, res) => {
   }
 });
 
-// POST /api/challenges/:id/checkin   用户对某个 challenge 打卡（可带图片）
+/**
+ * POST /api/challenges/:id/checkin
+ * 用户对某个 challenge 打卡（支持文字 + 可选图片）
+ * 前端用 FormData: userId, note, image
+ */
 router.post("/:id/checkin", upload.single("image"), async (req, res) => {
   try {
     const { id } = req.params; // challengeId
-    const { userId, note } = req.body;
+
+    // FormData 情况下，字段从 req.body 取
+    const userId = req.body.userId;
+    const note = req.body.note;
 
     if (!userId || !note?.trim()) {
+      console.log("Invalid checkin body:", req.body);
       return res
         .status(400)
         .json({ error: "userId and note are required" });
@@ -122,8 +151,6 @@ router.post("/:id/checkin", upload.single("image"), async (req, res) => {
       return res.status(404).json({ error: "Challenge not found" });
     }
 
-    const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
-
     let uc = await UserChallenge.findOne({
       user: userId,
       challenge: id,
@@ -132,6 +159,7 @@ router.post("/:id/checkin", upload.single("image"), async (req, res) => {
     const now = new Date();
 
     if (!uc) {
+      // 第一次加入+打卡
       uc = await UserChallenge.create({
         user: userId,
         challenge: id,
@@ -144,17 +172,18 @@ router.post("/:id/checkin", upload.single("image"), async (req, res) => {
       const last = uc.lastCheckInAt ? new Date(uc.lastCheckInAt) : null;
 
       if (last && isSameDay(last, now)) {
+        // 今天已经打过卡了，不重复加 streak
         return res.json({
           userChallenge: await uc.populate("challenge"),
           forumPost: null,
         });
       }
 
+      // 计算连续天数
       let newStreak = 1;
       if (last) {
         const diffMs = now - last;
         const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
         if (diffDays === 1) {
           newStreak = uc.streak + 1;
         } else {
@@ -171,11 +200,18 @@ router.post("/:id/checkin", upload.single("image"), async (req, res) => {
 
     uc = await uc.populate("challenge");
 
+    // 处理图片：multer 已经把文件放在 req.file 里
+    let imageUrl = null;
+    if (req.file) {
+      imageUrl = `/uploads/${req.file.filename}`;
+    }
+
+    // 在论坛中创建对应帖子
     const post = await ForumPost.create({
       title: challenge.title,
       content: note,
       hasMedia: !!imageUrl,
-      imageUrl,
+      imageUrl, // 注意字段名要和 ForumPost 模型一致
       source: "checkin",
       author: userId,
       challenge: challenge._id,
@@ -186,12 +222,15 @@ router.post("/:id/checkin", upload.single("image"), async (req, res) => {
       forumPost: post,
     });
   } catch (err) {
-    console.error("Error checking in challenge", err);
+    console.error("Error checking in challenge:", err);
     res.status(500).json({ error: "Failed to check in" });
   }
 });
 
-// 创建 challenge
+/**
+ * POST /api/challenges/create
+ * 创建 challenge
+ */
 router.post("/create", async (req, res) => {
   try {
     const { title, description, time, type } = req.body;
