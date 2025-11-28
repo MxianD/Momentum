@@ -57,7 +57,7 @@ function extractCategoryTags(post) {
 }
 
 /**
- * 把帖子按日期分组，posts 已经是按时间升序排序
+ * 把帖子按日期分组，posts 已经是按时间排序
  * 返回形如 [{ dateLabel: 'Nov 27', posts: [] }, ...]
  */
 function groupPostsByDay(posts) {
@@ -79,7 +79,7 @@ function groupPostsByDay(posts) {
     posts: list,
   }));
 
-  // 根据每组第一条 post 的时间，从早到晚排序
+  // 根据每组第一条 post 的时间，从新到旧排序（最新在上）
   result.sort((a, b) => {
     const t1 = a.posts[0].createdAt
       ? new Date(a.posts[0].createdAt).getTime()
@@ -87,7 +87,7 @@ function groupPostsByDay(posts) {
     const t2 = b.posts[0].createdAt
       ? new Date(b.posts[0].createdAt).getTime()
       : 0;
-    return t1 - t2; // earliest first
+    return t2 - t1; // latest first
   });
 
   return result;
@@ -177,11 +177,11 @@ function FriendsPage() {
             // 11/28 及之后：只显示 Homepage check-in 的 post
             return p.source === "checkin";
           })
-          // 时间从早到晚
+          // 时间从新到旧（最新在上）
           .sort((a, b) => {
             const t1 = a.createdAt ? new Date(a.createdAt).getTime() : 0;
             const t2 = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-            return t1 - t2;
+            return t2 - t1; // latest first
           });
 
         setPosts(visiblePosts);
@@ -232,6 +232,39 @@ function FriendsPage() {
       setCommentDrafts((prev) => ({ ...prev, [postId]: "" }));
     } catch (err) {
       console.error("Error sending comment:", err);
+      alert("Network error. Please try again.");
+    }
+  };
+
+  // 点赞 / upvote
+  const handleToggleLike = async (postId) => {
+    if (!userId) return;
+
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/forum/posts/${postId}/upvote`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId }),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        console.error("Failed to upvote:", data);
+        alert("Failed to like this post.");
+        return;
+      }
+
+      const updatedPost = data.post || data;
+      if (!updatedPost || !updatedPost._id) return;
+
+      setPosts((prev) =>
+        prev.map((p) => (p._id === updatedPost._id ? updatedPost : p))
+      );
+    } catch (err) {
+      console.error("Error when upvoting:", err);
       alert("Network error. Please try again.");
     }
   };
@@ -504,9 +537,15 @@ function FriendsPage() {
                             spacing={0.5}
                             sx={{ mr: 1.5 }}
                           >
-                            <FavoriteBorderIcon
-                              sx={{ fontSize: 20, color: "#EC4899" }}
-                            />
+                            <IconButton
+                              size="small"
+                              onClick={() => handleToggleLike(postId)}
+                              sx={{ p: 0.2 }}
+                            >
+                              <FavoriteBorderIcon
+                                sx={{ fontSize: 20, color: "#EC4899" }}
+                              />
+                            </IconButton>
                             <Typography
                               variant="caption"
                               sx={{ color: "#6B7280" }}
