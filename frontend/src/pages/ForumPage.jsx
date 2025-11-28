@@ -11,10 +11,11 @@ import {
   DialogActions,
   Button,
   CircularProgress,
-  Paper,
-  Stack,
+  Fab,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
+import AddIcon from "@mui/icons-material/Add";
+import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
 
 import BottomNavBar from "../components/BottomNavBar.jsx";
 import ForumPostCard from "../components/ForumPostCard.jsx";
@@ -24,7 +25,7 @@ const API_BASE_URL =
 
 // 判断某个 userId 是否在一个 ObjectId 数组中
 const isUserInArray = (arr, userId) => {
-  if (!Array.isArray(arr)) return false;
+  if (!Array.isArray(arr) || !userId) return false;
   return arr.some((u) => {
     if (typeof u === "string") return u === userId;
     if (u && typeof u === "object") return u._id === userId;
@@ -40,12 +41,8 @@ function ForumPage() {
   const [loading, setLoading] = useState(true);
   const [loadingError, setLoadingError] = useState("");
 
-  // ✨ 新增：发帖相关状态
-  const [createTitle, setCreateTitle] = useState("");
-  const [createContent, setCreateContent] = useState("");
-  const [createCategory, setCreateCategory] = useState("");
-  const [posting, setPosting] = useState(false);
-  const [postError, setPostError] = useState("");
+  // 每条帖子的评论输入内容
+  const [commentDrafts, setCommentDrafts] = useState({});
 
   // 当前用户
   const [currentUser, setCurrentUser] = useState(null);
@@ -57,43 +54,69 @@ function ForumPage() {
       console.error("Failed to parse user from localStorage", e);
     }
   }, []);
+  const userId = currentUser?._id;
 
-  // 加载帖子
-  useEffect(() => {
-    const fetchPosts = async () => {
-      try {
-        setLoading(true);
-        setLoadingError("");
-        const res = await fetch(`${API_BASE_URL}/forum/posts`);
-        if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+  // 发帖对话框相关
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [newBody, setNewBody] = useState("");
+  const [newCategories, setNewCategories] = useState("");
+  const [newFile, setNewFile] = useState(null);
+  const [posting, setPosting] = useState(false);
 
-        const data = await res.json();
-        setPosts(data);
+  // 封装加载帖子，方便发帖后刷新
+  const fetchPosts = async () => {
+    try {
+      setLoading(true);
+      setLoadingError("");
 
-        const initInteractions = {};
-        data.forEach((p) => {
-          initInteractions[p._id] = {
-            upvoted: false,
-            downvoted: false,
-            bookmarked: false,
-          };
-        });
-        setInteractions(initInteractions);
-      } catch (err) {
-        console.error("Failed to load posts:", err);
-        setLoadingError("Failed to load posts from server.");
-      } finally {
-        setLoading(false);
+      const res = await fetch(`${API_BASE_URL}/forum/posts`);
+      const data = await res.json().catch(() => []);
+
+      if (!res.ok) {
+        console.error("Load posts failed:", data);
+        throw new Error(`Request failed: ${res.status}`);
       }
-    };
 
+      // ❗ 关键：过滤掉 checkin 帖子，其他全部展示
+      const visiblePosts = (data || [])
+        .filter((p) => p.source !== "checkin")
+        // 最新在最上面
+        .sort((a, b) => {
+          const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return db - da;
+        });
+
+      setPosts(visiblePosts);
+    } catch (err) {
+      console.error("Failed to load posts:", err);
+      setLoadingError("Failed to load posts from server.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchPosts();
   }, []);
+
+  // 根据 posts + currentUser 计算交互状态
+  useEffect(() => {
+    const init = {};
+    posts.forEach((p) => {
+      init[p._id] = {
+        upvoted: isUserInArray(p.upvotedBy, userId),
+        downvoted: isUserInArray(p.downvotedBy, userId),
+        bookmarked: isUserInArray(p.bookmarkedBy, userId),
+      };
+    });
+    setInteractions(init);
+  }, [posts, userId]);
 
   const handleCardClick = (post) => setSelectedPost(post);
   const handleCloseDialog = () => setSelectedPost(null);
 
-  // 统一一个小工具函数，用后端返回的 post 更新到本地 posts 里面
   const applyPostUpdate = (updatedPost) => {
     setPosts((prev) =>
       prev.map((p) => (p._id === updatedPost._id ? updatedPost : p))
@@ -102,51 +125,34 @@ function ForumPage() {
 
   // 👍 点赞
   const handleUpvote = async (id) => {
-    if (!currentUser?._id) {
+    if (!userId) {
       alert("请先登录再点赞");
       return;
     }
-
     try {
       const res = await fetch(`${API_BASE_URL}/forum/posts/${id}/upvote`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ userId: currentUser._id }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
       });
-
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || `Upvote failed: ${res.status}`);
-      }
+      if (!res.ok) throw new Error(data.error || "Upvote failed");
 
       const updatedPost = data.post;
       if (updatedPost) {
         applyPostUpdate(updatedPost);
-
         setInteractions((prev) => {
           const prevState = prev[id] || {
             upvoted: false,
             downvoted: false,
             bookmarked: false,
           };
-
-          const upvoted = isUserInArray(
-            updatedPost.upvotedBy,
-            currentUser._id
-          );
-          const downvoted = isUserInArray(
-            updatedPost.downvotedBy,
-            currentUser._id
-          );
-
           return {
             ...prev,
             [id]: {
               ...prevState,
-              upvoted,
-              downvoted,
+              upvoted: isUserInArray(updatedPost.upvotedBy, userId),
+              downvoted: isUserInArray(updatedPost.downvotedBy, userId),
             },
           };
         });
@@ -159,54 +165,37 @@ function ForumPage() {
 
   // 👎 点踩
   const handleDownvote = async (id) => {
-    if (!currentUser?._id) {
+    if (!userId) {
       alert("请先登录再点踩");
       return;
     }
-
     try {
       const res = await fetch(
         `${API_BASE_URL}/forum/posts/${id}/downvote`,
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ userId: currentUser._id }),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId }),
         }
       );
-
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || `Downvote failed: ${res.status}`);
-      }
+      if (!res.ok) throw new Error(data.error || "Downvote failed");
 
       const updatedPost = data.post;
       if (updatedPost) {
         applyPostUpdate(updatedPost);
-
         setInteractions((prev) => {
           const prevState = prev[id] || {
             upvoted: false,
             downvoted: false,
             bookmarked: false,
           };
-
-          const upvoted = isUserInArray(
-            updatedPost.upvotedBy,
-            currentUser._id
-          );
-          const downvoted = isUserInArray(
-            updatedPost.downvotedBy,
-            currentUser._id
-          );
-
           return {
             ...prev,
             [id]: {
               ...prevState,
-              upvoted,
-              downvoted,
+              upvoted: isUserInArray(updatedPost.upvotedBy, userId),
+              downvoted: isUserInArray(updatedPost.downvotedBy, userId),
             },
           };
         });
@@ -219,49 +208,39 @@ function ForumPage() {
 
   // ⭐ 收藏
   const handleToggleBookmark = async (id) => {
-    if (!currentUser?._id) {
+    if (!userId) {
       alert("请先登录再收藏");
       return;
     }
-
     try {
       const res = await fetch(
         `${API_BASE_URL}/forum/posts/${id}/bookmark`,
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ userId: currentUser._id }),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId }),
         }
       );
-
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || `Bookmark failed: ${res.status}`);
-      }
+      if (!res.ok) throw new Error(data.error || "Bookmark failed");
 
       const updatedPost = data.post;
       if (updatedPost) {
         applyPostUpdate(updatedPost);
-
         setInteractions((prev) => {
           const prevState = prev[id] || {
             upvoted: false,
             downvoted: false,
             bookmarked: false,
           };
-
-          const bookmarked = isUserInArray(
-            updatedPost.bookmarkedBy,
-            currentUser._id
-          );
-
           return {
             ...prev,
             [id]: {
               ...prevState,
-              bookmarked,
+              bookmarked: isUserInArray(
+                updatedPost.bookmarkedBy,
+                userId
+              ),
             },
           };
         });
@@ -272,86 +251,115 @@ function ForumPage() {
     }
   };
 
-  /**
-   * ✨ 发帖：只在前端限制 category 必填
-   * 这里用 JSON 发送，如果你后端已经支持 categories，会存进去；
-   * 即使后端不处理这个字段，也不会报错。
-   */
-  const canSubmitPost =
-    createContent.trim().length > 0 &&
-    createCategory.trim().length > 0 &&
-    !posting;
+  // 评论输入
+  const handleChangeComment = (postId, value) => {
+    setCommentDrafts((prev) => ({ ...prev, [postId]: value }));
+  };
 
+  // 发送评论
+  const handleSubmitComment = async (postId) => {
+    const text = (commentDrafts[postId] || "").trim();
+    if (!text || !userId) return;
+
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/forum/posts/${postId}/comments`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId, text }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        console.error("Failed to send comment:", data);
+        alert("Failed to send comment");
+        return;
+      }
+
+      const updatedPost = data.post;
+      if (updatedPost) {
+        applyPostUpdate(updatedPost);
+      }
+
+      setCommentDrafts((prev) => ({ ...prev, [postId]: "" }));
+    } catch (err) {
+      console.error("Failed to send comment", err);
+      alert("Network error. Please try again.");
+    }
+  };
+
+  // 搜索过滤
+  const filteredPosts = useMemo(() => {
+    if (!search.trim()) return posts;
+    const q = search.toLowerCase();
+    return posts.filter(
+      (p) =>
+        (p.title || "").toLowerCase().includes(q) ||
+        (p.content || "").toLowerCase().includes(q)
+    );
+  }, [posts, search]);
+
+  // 选择图片
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) setNewFile(file);
+  };
+
+  // 发布知识帖 / 经验贴
   const handleCreatePost = async () => {
-    if (!currentUser?._id) {
+    if (!userId) {
       alert("请先登录再发帖");
       return;
     }
-    if (!createContent.trim()) {
-      setPostError("Content is required.");
+    if (!newBody.trim()) {
+      alert("Body text is required");
       return;
     }
-    if (!createCategory.trim()) {
-      setPostError("Category is required.");
-      return;
-    }
-
-    setPostError("");
-    setPosting(true);
 
     try {
+      setPosting(true);
+
+      const formData = new FormData();
+      const safeTitle = newTitle.trim() || "Untitled post";
+      formData.append("title", safeTitle);
+      formData.append("content", newBody.trim());
+      formData.append("userId", userId);
+      formData.append("source", "manual"); // 区分 checkin
+      if (newCategories.trim()) {
+        formData.append("categories", newCategories.trim());
+      }
+      if (newFile) {
+        formData.append("image", newFile);
+      }
+
       const res = await fetch(`${API_BASE_URL}/forum/posts`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          title: createTitle.trim(),
-          content: createContent.trim(),
-          userId: currentUser._id,
-          hasMedia: false,
-          source: "manual",
-          categories: createCategory.trim(), // 前端保证必填
-        }),
+        body: formData,
       });
 
       const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.post) {
+      if (!res.ok) {
         console.error("Create post failed:", data);
-        setPostError(
-          data.error || "Failed to publish post. Please try again."
-        );
+        alert("Failed to create post. Please try again.");
         setPosting(false);
         return;
       }
 
-      // 新帖子加到列表最前面
-      setPosts((prev) => [data.post, ...prev]);
+      await fetchPosts();
 
-      // 清空表单
-      setCreateTitle("");
-      setCreateContent("");
-      setCreateCategory("");
       setPosting(false);
+      setCreateOpen(false);
+      setNewTitle("");
+      setNewBody("");
+      setNewCategories("");
+      setNewFile(null);
     } catch (err) {
       console.error("Error creating post:", err);
-      setPostError("Network error. Please try again.");
+      alert("Network error. Please try again.");
       setPosting(false);
     }
   };
-
-  // 搜索 + 过滤：只展示非 checkin 的帖子（知识贴）
-  const filteredPosts = useMemo(() => {
-    let list = posts.filter((p) => p.source !== "checkin");
-    if (!search.trim()) return list;
-
-    const q = search.toLowerCase();
-    return list.filter(
-      (p) =>
-        p.title?.toLowerCase().includes(q) ||
-        p.content?.toLowerCase().includes(q)
-    );
-  }, [posts, search]);
 
   return (
     <Box
@@ -400,78 +408,6 @@ function ForumPage() {
         />
       </Box>
 
-      {/* ➕ 发帖区域 */}
-      <Box sx={{ px: { xs: 2, md: 4 }, mb: 1 }}>
-        <Paper
-          elevation={0}
-          sx={{
-            p: 2,
-            borderRadius: 3,
-            border: "1px solid #E5E7EB",
-            bgcolor: "#FFFFFF",
-          }}
-        >
-          <Typography
-            variant="subtitle2"
-            sx={{ fontWeight: 600, mb: 1 }}
-          >
-            Share your knowledge
-          </Typography>
-
-          <Stack spacing={1.2}>
-            <TextField
-              size="small"
-              label="Title (optional)"
-              fullWidth
-              value={createTitle}
-              onChange={(e) => setCreateTitle(e.target.value)}
-            />
-
-            <TextField
-              label="What did you learn or what worked for you?"
-              multiline
-              minRows={3}
-              fullWidth
-              value={createContent}
-              onChange={(e) => setCreateContent(e.target.value)}
-            />
-
-            <TextField
-              size="small"
-              label="Category (required, e.g. cooking, cleaning)"
-              placeholder="cooking, cleaning, budgeting..."
-              fullWidth
-              value={createCategory}
-              onChange={(e) => setCreateCategory(e.target.value)}
-            />
-
-            <Stack
-              direction="row"
-              justifyContent="flex-end"
-              alignItems="center"
-              spacing={1}
-            >
-              {postError && (
-                <Typography
-                  variant="caption"
-                  sx={{ color: "#EF4444", mr: 1 }}
-                >
-                  {postError}
-                </Typography>
-              )}
-              <Button
-                variant="contained"
-                onClick={handleCreatePost}
-                disabled={!canSubmitPost}
-                sx={{ textTransform: "none", borderRadius: 999 }}
-              >
-                {posting ? "Posting..." : "Post"}
-              </Button>
-            </Stack>
-          </Stack>
-        </Paper>
-      </Box>
-
       {/* 列表区域 */}
       <Box
         sx={{
@@ -482,7 +418,7 @@ function ForumPage() {
       >
         {loading && (
           <Box sx={{ display: "flex", justifyContent: "center", mt: 4 }}>
-            <CircularProgress size={28} />
+            <CircularProgress size={28} sx={{ color: "#5E7D28" }} />
           </Box>
         )}
 
@@ -501,16 +437,27 @@ function ForumPage() {
               bookmarked: false,
             };
 
-            // 解析 categories 传给卡片（如果你新版 ForumPostCard 支持的话）
-            let categories = [];
-            if (Array.isArray(p.categories)) {
-              categories = p.categories;
-            } else if (typeof p.categories === "string") {
-              categories = p.categories
+            const isGoodPost =
+              (p.upvotes ?? 0) >= 5 ||
+              (p.bookmarks ?? 0) >= 3 ||
+              (p.comments?.length ?? 0) >= 3;
+
+            // 解析 category tags（字符串 or 数组）
+            const categoryTags = (() => {
+              const raw = p.categories;
+              if (!raw) return [];
+              if (Array.isArray(raw)) return raw;
+              return raw
                 .split(",")
                 .map((t) => t.trim())
                 .filter(Boolean);
-            }
+            })();
+
+            const comments = (p.comments || []).map((c) => ({
+              id: c.id,
+              authorName: c.userName || "Anonymous",
+              text: c.text,
+            }));
 
             return (
               <ForumPostCard
@@ -518,10 +465,17 @@ function ForumPage() {
                 title={p.title}
                 content={p.content}
                 hasMedia={p.hasMedia}
+                imageUrl={p.imageUrl}
                 authorName={p.authorName || "Anonymous"}
                 upvotesCount={p.upvotes ?? 0}
                 downvotesCount={p.downvotes ?? 0}
                 bookmarksCount={p.bookmarks ?? 0}
+                isGoodPost={isGoodPost}
+                categories={categoryTags}
+                comments={comments}
+                commentValue={commentDrafts[p._id] || ""}
+                onCommentChange={(v) => handleChangeComment(p._id, v)}
+                onSubmitComment={() => handleSubmitComment(p._id)}
                 upvoted={state.upvoted}
                 downvoted={state.downvoted}
                 bookmarked={state.bookmarked}
@@ -529,23 +483,35 @@ function ForumPage() {
                 onDownvote={() => handleDownvote(p._id)}
                 onToggleBookmark={() => handleToggleBookmark(p._id)}
                 onCardClick={() => handleCardClick(p)}
-                categories={categories}
-                isGoodPost={p.isGoodPost} // 如果你后端有这个字段的话
-                comments={p.comments || []} // 如果 ForumPostCard 用得到
               />
             );
           })}
 
         {!loading && !loadingError && filteredPosts.length === 0 && (
           <Typography variant="body2" sx={{ color: "#6B7280", mt: 2 }}>
-            No posts found. Try a different keyword.
+            No posts yet. Be the first to share your experience!
           </Typography>
         )}
       </Box>
 
+      {/* 右下角悬浮发帖按钮 */}
+      <Fab
+        color="primary"
+        onClick={() => setCreateOpen(true)}
+        sx={{
+          position: "fixed",
+          right: 24,
+          bottom: 80,
+          bgcolor: "#5E7D28",
+          "&:hover": { bgcolor: "#46611F" },
+        }}
+      >
+        <AddIcon />
+      </Fab>
+
       <BottomNavBar />
 
-      {/* 帖子详情弹窗（保持你原来的样式） */}
+      {/* 帖子详情弹窗（简单版） */}
       <Dialog
         open={!!selectedPost}
         onClose={handleCloseDialog}
@@ -557,24 +523,94 @@ function ForumPage() {
           <Typography variant="body2" sx={{ color: "#4B5563" }}>
             {selectedPost?.content}
           </Typography>
-          {selectedPost?.hasMedia && (
-            <Box sx={{ display: "flex", gap: 1.2, mt: 2 }}>
-              {[0, 1, 2].map((i) => (
-                <Box
-                  key={i}
-                  sx={{
-                    flex: 1,
-                    height: 80,
-                    borderRadius: 2,
-                    bgcolor: "#DDDDDD",
-                  }}
-                />
-              ))}
-            </Box>
-          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseDialog}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 发表知识贴弹窗 */}
+      <Dialog
+        open={createOpen}
+        onClose={() => !posting && setCreateOpen(false)}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Share your life skill</DialogTitle>
+        <DialogContent dividers>
+          <Typography
+            variant="body2"
+            sx={{ color: "#6B7280", mb: 1.5 }}
+          >
+            Title (optional), body text is required. You can attach a
+            photo or short video.
+          </Typography>
+
+          <TextField
+            label="Title (optional)"
+            fullWidth
+            margin="dense"
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+          />
+
+          <TextField
+            label="Body *"
+            fullWidth
+            margin="dense"
+            multiline
+            minRows={4}
+            value={newBody}
+            onChange={(e) => setNewBody(e.target.value)}
+            helperText="Share your experience, steps, what worked/failed."
+          />
+
+          <TextField
+            label="Categories (optional)"
+            fullWidth
+            margin="dense"
+            placeholder="e.g. cooking, cleaning, budgeting"
+            value={newCategories}
+            onChange={(e) => setNewCategories(e.target.value)}
+          />
+
+          <Box sx={{ mt: 2, display: "flex", alignItems: "center", gap: 2 }}>
+            <Button
+              variant="outlined"
+              startIcon={<PhotoCameraIcon />}
+              component="label"
+              size="small"
+            >
+              Add photo / video
+              <input
+                type="file"
+                accept="image/*,video/*"
+                hidden
+                onChange={handleFileChange}
+              />
+            </Button>
+
+            {newFile && (
+              <Typography variant="caption" sx={{ color: "#4B5563" }}>
+                {newFile.name}
+              </Typography>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setCreateOpen(false)}
+            disabled={posting}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleCreatePost}
+            variant="contained"
+            disabled={posting || !newBody.trim()}
+          >
+            {posting ? "Posting..." : "Post"}
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>
