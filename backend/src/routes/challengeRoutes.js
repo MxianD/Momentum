@@ -7,7 +7,7 @@ import fs from "fs";
 import Challenge from "../models/Challenge.js";
 import UserChallenge from "../models/UserChallenge.js";
 import ForumPost from "../models/ForumPost.js";
-
+import User from "../models/User.js";
 const router = express.Router();
 
 function isSameDay(d1, d2) {
@@ -279,6 +279,46 @@ router.post("/create", async (req, res) => {
   } catch (err) {
     console.error("Error creating challenge", err);
     res.status(500).json({ error: "Failed to create challenge" });
+  }
+});
+
+// ⭐ 获取“好友正在参加的挑战”
+router.get("/friends", async (req, res) => {
+  try {
+    const userId = req.query.userId;
+    if (!userId) {
+      return res.status(400).json({ error: "userId is required" });
+    }
+
+    // 1. 获取我的好友列表
+    const user = await User.findById(userId).populate("friends", "_id name");
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const friendIds = user.friends.map(f => f._id);
+
+    if (friendIds.length === 0) {
+      return res.json([]); // 没好友就空列表
+    }
+
+    // 2. 找好友的 UserChallenge
+    const friendChallenges = await UserChallenge.find({
+      user: { $in: friendIds }
+    }).populate("challenge");
+
+    // 3. 去重（同一个 challenge 多个好友可以参加）
+    const uniqueMap = new Map();
+    friendChallenges.forEach(fc => {
+      if (fc.challenge) {
+        uniqueMap.set(fc.challenge._id.toString(), fc.challenge);
+      }
+    });
+
+    const uniqueChallenges = Array.from(uniqueMap.values());
+
+    res.json(uniqueChallenges);
+  } catch (err) {
+    console.error("Error fetching friends' challenges:", err);
+    res.status(500).json({ error: "Failed to load challenges" });
   }
 });
 
