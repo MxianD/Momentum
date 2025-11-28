@@ -1,97 +1,59 @@
 // src/pages/ForumPage.jsx
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Box,
+  Paper,
   Typography,
+  Stack,
+  Avatar,
+  IconButton,
   TextField,
-  InputAdornment,
+  Button,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
-  Button,
-  CircularProgress,
   Fab,
+  Divider,
 } from "@mui/material";
+
 import SearchIcon from "@mui/icons-material/Search";
+import ThumbUpOffAltIcon from "@mui/icons-material/ThumbUpOffAlt";
+import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
+import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";
+import SendIcon from "@mui/icons-material/Send";
 import AddIcon from "@mui/icons-material/Add";
-import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
 
 import BottomNavBar from "../components/BottomNavBar.jsx";
-import ForumPostCard from "../components/ForumPostCard.jsx";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
 
-// 判断某个 userId 是否在一个 ObjectId 数组中
-const isUserInArray = (arr, userId) => {
-  if (!Array.isArray(arr) || !userId) return false;
-  return arr.some((u) => {
-    if (typeof u === "string") return u === userId;
-    if (u && typeof u === "object") return u._id === userId;
-    return false;
-  });
-};
-
-function ForumPage() {
+const ForumPage = () => {
   const [posts, setPosts] = useState([]);
-  const [interactions, setInteractions] = useState({});
   const [search, setSearch] = useState("");
-  const [selectedPost, setSelectedPost] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [loadingError, setLoadingError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  // 每条帖子的评论输入内容
-  const [commentDrafts, setCommentDrafts] = useState({});
+  // comment input keyed by postId
+  const [commentTexts, setCommentTexts] = useState({});
 
-  // 当前用户
-  const [currentUser, setCurrentUser] = useState(null);
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("momentumUser");
-      if (saved) setCurrentUser(JSON.parse(saved));
-    } catch (e) {
-      console.error("Failed to parse user from localStorage", e);
-    }
-  }, []);
-  const userId = currentUser?._id;
-
-  // 发帖对话框相关
+  // dialog state for creating post
   const [createOpen, setCreateOpen] = useState(false);
+  const [newCategory, setNewCategory] = useState("");
   const [newTitle, setNewTitle] = useState("");
   const [newBody, setNewBody] = useState("");
-  const [newCategories, setNewCategories] = useState("");
-  const [newFile, setNewFile] = useState(null);
-  const [posting, setPosting] = useState(false);
+  const [newImage, setNewImage] = useState(null);
 
-  // 封装加载帖子，方便发帖后刷新
+  const [errors, setErrors] = useState({});
+
   const fetchPosts = async () => {
     try {
       setLoading(true);
-      setLoadingError("");
-
       const res = await fetch(`${API_BASE_URL}/forum/posts`);
-      const data = await res.json().catch(() => []);
-
-      if (!res.ok) {
-        console.error("Load posts failed:", data);
-        throw new Error(`Request failed: ${res.status}`);
-      }
-
-      // ❗ 关键：过滤掉 checkin 帖子，其他全部展示
-      const visiblePosts = (data || [])
-        .filter((p) => p.source !== "checkin")
-        // 最新在最上面
-        .sort((a, b) => {
-          const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-          const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-          return db - da;
-        });
-
-      setPosts(visiblePosts);
+      const data = await res.json();
+      setPosts(data || []);
     } catch (err) {
-      console.error("Failed to load posts:", err);
-      setLoadingError("Failed to load posts from server.");
+      console.error("Failed to fetch forum posts", err);
     } finally {
       setLoading(false);
     }
@@ -101,236 +63,56 @@ function ForumPage() {
     fetchPosts();
   }, []);
 
-  // 根据 posts + currentUser 计算交互状态
-  useEffect(() => {
-    const init = {};
-    posts.forEach((p) => {
-      init[p._id] = {
-        upvoted: isUserInArray(p.upvotedBy, userId),
-        downvoted: isUserInArray(p.downvotedBy, userId),
-        bookmarked: isUserInArray(p.bookmarkedBy, userId),
-      };
-    });
-    setInteractions(init);
-  }, [posts, userId]);
-
-  const handleCardClick = (post) => setSelectedPost(post);
-  const handleCloseDialog = () => setSelectedPost(null);
-
-  const applyPostUpdate = (updatedPost) => {
-    setPosts((prev) =>
-      prev.map((p) => (p._id === updatedPost._id ? updatedPost : p))
-    );
+  const handleCommentChange = (postId, value) => {
+    setCommentTexts((prev) => ({ ...prev, [postId]: value }));
   };
 
-  // 👍 点赞
-  const handleUpvote = async (id) => {
-    if (!userId) {
-      alert("请先登录再点赞");
-      return;
-    }
-    try {
-      const res = await fetch(`${API_BASE_URL}/forum/posts/${id}/upvote`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Upvote failed");
-
-      const updatedPost = data.post;
-      if (updatedPost) {
-        applyPostUpdate(updatedPost);
-        setInteractions((prev) => {
-          const prevState = prev[id] || {
-            upvoted: false,
-            downvoted: false,
-            bookmarked: false,
-          };
-          return {
-            ...prev,
-            [id]: {
-              ...prevState,
-              upvoted: isUserInArray(updatedPost.upvotedBy, userId),
-              downvoted: isUserInArray(updatedPost.downvotedBy, userId),
-            },
-          };
-        });
-      }
-    } catch (err) {
-      console.error("Failed to upvote:", err);
-      alert(err.message || "Failed to upvote");
-    }
-  };
-
-  // 👎 点踩
-  const handleDownvote = async (id) => {
-    if (!userId) {
-      alert("请先登录再点踩");
-      return;
-    }
-    try {
-      const res = await fetch(
-        `${API_BASE_URL}/forum/posts/${id}/downvote`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId }),
-        }
-      );
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Downvote failed");
-
-      const updatedPost = data.post;
-      if (updatedPost) {
-        applyPostUpdate(updatedPost);
-        setInteractions((prev) => {
-          const prevState = prev[id] || {
-            upvoted: false,
-            downvoted: false,
-            bookmarked: false,
-          };
-          return {
-            ...prev,
-            [id]: {
-              ...prevState,
-              upvoted: isUserInArray(updatedPost.upvotedBy, userId),
-              downvoted: isUserInArray(updatedPost.downvotedBy, userId),
-            },
-          };
-        });
-      }
-    } catch (err) {
-      console.error("Failed to downvote:", err);
-      alert(err.message || "Failed to downvote");
-    }
-  };
-
-  // ⭐ 收藏
-  const handleToggleBookmark = async (id) => {
-    if (!userId) {
-      alert("请先登录再收藏");
-      return;
-    }
-    try {
-      const res = await fetch(
-        `${API_BASE_URL}/forum/posts/${id}/bookmark`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId }),
-        }
-      );
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Bookmark failed");
-
-      const updatedPost = data.post;
-      if (updatedPost) {
-        applyPostUpdate(updatedPost);
-        setInteractions((prev) => {
-          const prevState = prev[id] || {
-            upvoted: false,
-            downvoted: false,
-            bookmarked: false,
-          };
-          return {
-            ...prev,
-            [id]: {
-              ...prevState,
-              bookmarked: isUserInArray(
-                updatedPost.bookmarkedBy,
-                userId
-              ),
-            },
-          };
-        });
-      }
-    } catch (err) {
-      console.error("Failed to bookmark:", err);
-      alert(err.message || "Failed to bookmark");
-    }
-  };
-
-  // 评论输入
-  const handleChangeComment = (postId, value) => {
-    setCommentDrafts((prev) => ({ ...prev, [postId]: value }));
-  };
-
-  // 发送评论
   const handleSubmitComment = async (postId) => {
-    const text = (commentDrafts[postId] || "").trim();
-    if (!text || !userId) return;
+    const text = (commentTexts[postId] || "").trim();
+    if (!text) return;
 
     try {
       const res = await fetch(
         `${API_BASE_URL}/forum/posts/${postId}/comments`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId, text }),
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ text }),
         }
       );
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        console.error("Failed to send comment:", data);
-        alert("Failed to send comment");
-        return;
+
+      if (!res.ok) {
+        throw new Error("Failed to submit comment");
       }
 
-      const updatedPost = data.post;
-      if (updatedPost) {
-        applyPostUpdate(updatedPost);
-      }
-
-      setCommentDrafts((prev) => ({ ...prev, [postId]: "" }));
+      setCommentTexts((prev) => ({ ...prev, [postId]: "" }));
+      await fetchPosts();
     } catch (err) {
-      console.error("Failed to send comment", err);
-      alert("Network error. Please try again.");
+      console.error(err);
     }
   };
 
-  // 搜索过滤
-  const filteredPosts = useMemo(() => {
-    if (!search.trim()) return posts;
-    const q = search.toLowerCase();
-    return posts.filter(
-      (p) =>
-        (p.title || "").toLowerCase().includes(q) ||
-        (p.content || "").toLowerCase().includes(q)
-    );
-  }, [posts, search]);
-
-  // 选择图片
-  const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) setNewFile(file);
+  const validatePost = () => {
+    const newErrors = {};
+    if (!newCategory.trim()) newErrors.category = "Category is required";
+    if (!newTitle.trim()) newErrors.title = "Title is required";
+    if (!newBody.trim()) newErrors.body = "Post body is required";
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
   };
 
-  // 发布知识帖 / 经验贴
   const handleCreatePost = async () => {
-    if (!userId) {
-      alert("请先登录再发帖");
-      return;
-    }
-    if (!newBody.trim()) {
-      alert("Body text is required");
-      return;
-    }
+    if (!validatePost()) return;
 
     try {
-      setPosting(true);
-
       const formData = new FormData();
-      const safeTitle = newTitle.trim() || "Untitled post";
-      formData.append("title", safeTitle);
-      formData.append("content", newBody.trim());
-      formData.append("userId", userId);
-      formData.append("source", "manual"); // 区分 checkin
-      if (newCategories.trim()) {
-        formData.append("categories", newCategories.trim());
-      }
-      if (newFile) {
-        formData.append("image", newFile);
+      formData.append("category", newCategory.trim());
+      formData.append("title", newTitle.trim());
+      formData.append("body", newBody.trim());
+      if (newImage) {
+        formData.append("image", newImage);
       }
 
       const res = await fetch(`${API_BASE_URL}/forum/posts`, {
@@ -338,283 +120,329 @@ function ForumPage() {
         body: formData,
       });
 
-      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        console.error("Create post failed:", data);
-        alert("Failed to create post. Please try again.");
-        setPosting(false);
-        return;
+        throw new Error("Failed to create post");
       }
 
-      await fetchPosts();
-
-      setPosting(false);
       setCreateOpen(false);
+      setNewCategory("");
       setNewTitle("");
       setNewBody("");
-      setNewCategories("");
-      setNewFile(null);
+      setNewImage(null);
+      setErrors({});
+      await fetchPosts();
     } catch (err) {
-      console.error("Error creating post:", err);
-      alert("Network error. Please try again.");
-      setPosting(false);
+      console.error(err);
     }
+  };
+
+  const handleImageChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setNewImage(file);
+    }
+  };
+
+  const filteredPosts = posts.filter((p) => {
+    const q = search.toLowerCase();
+    if (!q) return true;
+    return (
+      p.title?.toLowerCase().includes(q) ||
+      p.body?.toLowerCase().includes(q) ||
+      p.category?.toLowerCase().includes(q)
+    );
+  });
+
+  const getInitials = (name) => {
+    if (!name) return "?";
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase();
+  };
+
+  const getCommenterName = (comment) => {
+    return (
+      comment.userName ||
+      comment.username ||
+      comment.user?.name ||
+      comment.user?.username ||
+      "Anonymous"
+    );
   };
 
   return (
     <Box
       sx={{
         minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        bgcolor: "#F2F2F2",
+        bgcolor: "#f5f5f5",
+        pb: 9, // bottom nav
       }}
     >
-      {/* 顶部搜索栏 */}
+      {/* 搜索栏 */}
       <Box
         sx={{
-          px: { xs: 2, md: 4 },
-          pt: { xs: 2.5, md: 3 },
-          pb: 1.5,
-          bgcolor: "#F2F2F2",
+          position: "sticky",
+          top: 0,
+          zIndex: 10,
+          bgcolor: "#f5f5f5",
+          px: 2,
+          pt: 2,
+          pb: 1,
         }}
       >
-        <TextField
-          fullWidth
-          placeholder="Search for the post..."
-          variant="outlined"
-          size="small"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          InputProps={{
-            endAdornment: (
-              <InputAdornment position="end">
-                <SearchIcon sx={{ color: "#ffffff" }} />
-              </InputAdornment>
-            ),
-            sx: {
-              bgcolor: "#5E7D28",
-              borderRadius: 999,
-              color: "#FFFFFF",
-              px: 2,
-              "& .MuiOutlinedInput-notchedOutline": {
-                border: "none",
-              },
-              "& input::placeholder": {
-                color: "rgba(255,255,255,0.85)",
-              },
-            },
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            bgcolor: "#5f8c2f",
+            borderRadius: "999px",
+            px: 2,
+            py: 1,
           }}
-        />
+        >
+          <SearchIcon sx={{ color: "white", mr: 1 }} />
+          <TextField
+            variant="standard"
+            placeholder="Search for the post..."
+            InputProps={{
+              disableUnderline: true,
+              sx: { color: "white" },
+            }}
+            fullWidth
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </Box>
       </Box>
 
-      {/* 列表区域 */}
-      <Box
-        sx={{
-          flexGrow: 1,
-          px: { xs: 2, md: 4 },
-          pb: 8,
-        }}
-      >
+      {/* 帖子列表 */}
+      <Box sx={{ px: 2, pb: 2 }}>
         {loading && (
-          <Box sx={{ display: "flex", justifyContent: "center", mt: 4 }}>
-            <CircularProgress size={28} sx={{ color: "#5E7D28" }} />
-          </Box>
-        )}
-
-        {!loading && loadingError && (
-          <Typography variant="body2" sx={{ color: "#EF4444", mt: 2 }}>
-            {loadingError}
+          <Typography variant="body2" sx={{ mt: 2 }}>
+            Loading posts...
           </Typography>
         )}
 
-        {!loading &&
-          !loadingError &&
-          filteredPosts.map((p) => {
-            const state = interactions[p._id] || {
-              upvoted: false,
-              downvoted: false,
-              bookmarked: false,
-            };
-
-            const isGoodPost =
-              (p.upvotes ?? 0) >= 5 ||
-              (p.bookmarks ?? 0) >= 3 ||
-              (p.comments?.length ?? 0) >= 3;
-
-            // 解析 category tags（字符串 or 数组）
-            const categoryTags = (() => {
-              const raw = p.categories;
-              if (!raw) return [];
-              if (Array.isArray(raw)) return raw;
-              return raw
-                .split(",")
-                .map((t) => t.trim())
-                .filter(Boolean);
-            })();
-
-            const comments = (p.comments || []).map((c) => ({
-              id: c.id,
-              authorName: c.userName || "Anonymous",
-              text: c.text,
-            }));
-
-            return (
-              <ForumPostCard
-                key={p._id}
-                title={p.title}
-                content={p.content}
-                hasMedia={p.hasMedia}
-                imageUrl={p.imageUrl}
-                authorName={p.authorName || "Anonymous"}
-                upvotesCount={p.upvotes ?? 0}
-                downvotesCount={p.downvotes ?? 0}
-                bookmarksCount={p.bookmarks ?? 0}
-                isGoodPost={isGoodPost}
-                categories={categoryTags}
-                comments={comments}
-                commentValue={commentDrafts[p._id] || ""}
-                onCommentChange={(v) => handleChangeComment(p._id, v)}
-                onSubmitComment={() => handleSubmitComment(p._id)}
-                upvoted={state.upvoted}
-                downvoted={state.downvoted}
-                bookmarked={state.bookmarked}
-                onUpvote={() => handleUpvote(p._id)}
-                onDownvote={() => handleDownvote(p._id)}
-                onToggleBookmark={() => handleToggleBookmark(p._id)}
-                onCardClick={() => handleCardClick(p)}
-              />
-            );
-          })}
-
-        {!loading && !loadingError && filteredPosts.length === 0 && (
-          <Typography variant="body2" sx={{ color: "#6B7280", mt: 2 }}>
-            No posts yet. Be the first to share your experience!
+        {!loading && filteredPosts.length === 0 && (
+          <Typography variant="body2" sx={{ mt: 2 }}>
+            No posts yet.
           </Typography>
         )}
+
+        <Stack spacing={2}>
+          {filteredPosts.map((post) => (
+            <Paper
+              key={post._id}
+              sx={{
+                borderRadius: 3,
+                overflow: "hidden",
+              }}
+              elevation={1}
+            >
+              <Box sx={{ p: 2 }}>
+                {/* 用户 & 标题 */}
+                <Stack direction="row" spacing={1.5} alignItems="center">
+                  <Avatar sx={{ bgcolor: "#5f8c2f" }}>
+                    {getInitials(post.authorName || post.userName)}
+                  </Avatar>
+                  <Box>
+                    <Typography fontWeight={600}>
+                      {post.authorName || post.userName || "User"}
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      sx={{ color: "text.secondary" }}
+                    >
+                      {post.category || "Uncategorized"}
+                    </Typography>
+                  </Box>
+                </Stack>
+
+                <Box sx={{ mt: 1.5 }}>
+                  <Typography fontWeight={600}>{post.title}</Typography>
+                  <Typography
+                    variant="body2"
+                    sx={{ mt: 0.5, whiteSpace: "pre-line" }}
+                  >
+                    {post.body}
+                  </Typography>
+                </Box>
+
+                {post.imageUrl && (
+                  <Box
+                    sx={{
+                      mt: 1.5,
+                      borderRadius: 2,
+                      overflow: "hidden",
+                    }}
+                  >
+                    {/* eslint-disable-next-line jsx-a11y/alt-text */}
+                    <img
+                      src={post.imageUrl}
+                      style={{ width: "100%", display: "block" }}
+                    />
+                  </Box>
+                )}
+
+                {/* 操作栏 */}
+                <Stack
+                  direction="row"
+                  spacing={2}
+                  alignItems="center"
+                  sx={{ mt: 1.5 }}
+                >
+                  <IconButton size="small">
+                    <ThumbUpOffAltIcon fontSize="small" />
+                  </IconButton>
+                  <Typography variant="body2">
+                    {post.likeCount ?? post.likes ?? 0}
+                  </Typography>
+
+                  <Stack direction="row" alignItems="center" spacing={0.5}>
+                    <ChatBubbleOutlineIcon fontSize="small" />
+                    <Typography variant="body2">
+                      {post.comments?.length ?? 0}
+                    </Typography>
+                  </Stack>
+
+                  <IconButton size="small" sx={{ marginLeft: "auto" }}>
+                    <BookmarkBorderIcon fontSize="small" />
+                  </IconButton>
+                </Stack>
+              </Box>
+
+              {/* 评论区 */}
+              <Divider />
+              <Box sx={{ p: 2, pt: 1.5 }}>
+                {/* 已有评论 */}
+                <Stack spacing={1} sx={{ mb: 1.5 }}>
+                  {post.comments?.map((c) => (
+                    <Typography
+                      key={c._id}
+                      variant="body2"
+                      sx={{ fontSize: 13 }}
+                    >
+                      <strong>{getCommenterName(c)}</strong>: {c.text}
+                    </Typography>
+                  ))}
+                </Stack>
+
+                {/* 输入框 */}
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    borderRadius: "999px",
+                    border: "1px solid #c2d7a0",
+                    px: 1.5,
+                  }}
+                >
+                  <TextField
+                    variant="standard"
+                    placeholder="Leave a supportive comment..."
+                    InputProps={{ disableUnderline: true }}
+                    fullWidth
+                    value={commentTexts[post._id] || ""}
+                    onChange={(e) =>
+                      handleCommentChange(post._id, e.target.value)
+                    }
+                  />
+                  <IconButton
+                    onClick={() => handleSubmitComment(post._id)}
+                    size="small"
+                  >
+                    <SendIcon fontSize="small" />
+                  </IconButton>
+                </Box>
+              </Box>
+            </Paper>
+          ))}
+        </Stack>
       </Box>
 
-      {/* 右下角悬浮发帖按钮 */}
+      {/* 右下角发布帖子按钮 */}
       <Fab
         color="primary"
-        onClick={() => setCreateOpen(true)}
         sx={{
           position: "fixed",
           right: 24,
-          bottom: 80,
-          bgcolor: "#5E7D28",
-          "&:hover": { bgcolor: "#46611F" },
+          bottom: 90, // 上面留出 BottomNavBar 的空间
+          bgcolor: "#5f8c2f",
+          "&:hover": { bgcolor: "#4d7226" },
         }}
+        onClick={() => setCreateOpen(true)}
       >
         <AddIcon />
       </Fab>
 
-      <BottomNavBar />
-
-      {/* 帖子详情弹窗（简单版） */}
-      <Dialog
-        open={!!selectedPost}
-        onClose={handleCloseDialog}
-        fullWidth
-        maxWidth="sm"
-      >
-        <DialogTitle>{selectedPost?.title || "Post"}</DialogTitle>
-        <DialogContent dividers>
-          <Typography variant="body2" sx={{ color: "#4B5563" }}>
-            {selectedPost?.content}
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseDialog}>Close</Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* 发表知识贴弹窗 */}
+      {/* 发布帖子弹窗 */}
       <Dialog
         open={createOpen}
-        onClose={() => !posting && setCreateOpen(false)}
+        onClose={() => setCreateOpen(false)}
         fullWidth
         maxWidth="sm"
       >
-        <DialogTitle>Share your life skill</DialogTitle>
+        <DialogTitle>Share your knowledge</DialogTitle>
         <DialogContent dividers>
-          <Typography
-            variant="body2"
-            sx={{ color: "#6B7280", mb: 1.5 }}
-          >
-            Title (optional), body text is required. You can attach a
-            photo or short video.
-          </Typography>
+          <Box sx={{ mt: 1.5, display: "flex", flexDirection: "column", gap: 2 }}>
+            <TextField
+              label="Category (required)"
+              value={newCategory}
+              onChange={(e) => setNewCategory(e.target.value)}
+              error={!!errors.category}
+              helperText={errors.category}
+              fullWidth
+            />
+            <TextField
+              label="Title (required)"
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              error={!!errors.title}
+              helperText={errors.title}
+              fullWidth
+            />
+            <TextField
+              label="What did you learn or what worked for you? (required)"
+              value={newBody}
+              onChange={(e) => setNewBody(e.target.value)}
+              error={!!errors.body}
+              helperText={errors.body}
+              fullWidth
+              multiline
+              minRows={4}
+            />
 
-          <TextField
-            label="Title (optional)"
-            fullWidth
-            margin="dense"
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-          />
-
-          <TextField
-            label="Body *"
-            fullWidth
-            margin="dense"
-            multiline
-            minRows={4}
-            value={newBody}
-            onChange={(e) => setNewBody(e.target.value)}
-            helperText="Share your experience, steps, what worked/failed."
-          />
-
-          <TextField
-            label="Categories (optional)"
-            fullWidth
-            margin="dense"
-            placeholder="e.g. cooking, cleaning, budgeting"
-            value={newCategories}
-            onChange={(e) => setNewCategories(e.target.value)}
-          />
-
-          <Box sx={{ mt: 2, display: "flex", alignItems: "center", gap: 2 }}>
-            <Button
-              variant="outlined"
-              startIcon={<PhotoCameraIcon />}
-              component="label"
-              size="small"
-            >
-              Add photo / video
-              <input
-                type="file"
-                accept="image/*,video/*"
-                hidden
-                onChange={handleFileChange}
-              />
-            </Button>
-
-            {newFile && (
-              <Typography variant="caption" sx={{ color: "#4B5563" }}>
-                {newFile.name}
-              </Typography>
-            )}
+            <Box>
+              <Button variant="outlined" component="label">
+                {newImage ? "Change image" : "Upload image"}
+                <input
+                  type="file"
+                  hidden
+                  accept="image/*"
+                  onChange={handleImageChange}
+                />
+              </Button>
+              {newImage && (
+                <Typography variant="caption" sx={{ display: "block", mt: 0.5 }}>
+                  Selected: {newImage.name}
+                </Typography>
+              )}
+            </Box>
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button
-            onClick={() => setCreateOpen(false)}
-            disabled={posting}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleCreatePost}
-            variant="contained"
-            disabled={posting || !newBody.trim()}
-          >
-            {posting ? "Posting..." : "Post"}
+          <Button onClick={() => setCreateOpen(false)}>Cancel</Button>
+          <Button variant="contained" onClick={handleCreatePost}>
+            Post
           </Button>
         </DialogActions>
       </Dialog>
+
+      <BottomNavBar />
     </Box>
   );
-}
+};
 
 export default ForumPage;
