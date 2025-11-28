@@ -118,15 +118,5 @@ router.post("/:id/friends", async (req, res) => {
     res.status(500).json({ error: "Failed to add friend" });
   }
 });
-// ⭐ 获取所有用户
-router.get("/", async (req, res) => {
-  try {
-    const users = await User.find().select("_id name email");
-    res.json(users);
-  } catch (err) {
-    console.error("Error fetching all users:", err);
-    res.status(500).json({ error: "Failed to fetch users" });
-  }
-});
 
 export default router;

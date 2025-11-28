@@ -315,7 +315,7 @@ function HomePage() {
       setAllUsersError("");
 
       // ⚠️ 这里假设有 GET /api/users 返回所有用户
-      const res = await fetch(`${API_BASE_URL}/users`);
+      const res = await fetch(`${API_BASE_URL}/all`);
       const data = await res.json().catch(() => []);
 
       if (!res.ok) {
