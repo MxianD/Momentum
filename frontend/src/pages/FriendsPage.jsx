@@ -154,7 +154,7 @@ function FriendsPage() {
         // 3. 必须有 category
         const visiblePosts = (postsData || [])
           .filter((p) => p.source === "checkin") // ⭐ 只要 checkin
-          .filter(hasValidCategory) // ⭐ 有 category 才展示
+          // .filter(hasValidCategory) // ⭐ 有 category 才展示
           .filter((p) => {
             const a = p.author;
             const authorId =
