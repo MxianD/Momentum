@@ -33,7 +33,7 @@ const systemGoals = [
     title: "Stay hydrated",
     subtitle: "",
     streak: 5,
-    progressText: "4/7",
+    progressText: "",
     checkedInToday: false,
     lastNote: "",
     isSystem: true,

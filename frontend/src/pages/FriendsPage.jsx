@@ -148,19 +148,34 @@ function FriendsPage() {
 
         const friendIds = new Set(friendsList.map((f) => f._id));
 
+        // 截止时间：11/28 这一天 00:00 作为分界。
+        const cutoff = new Date(2025, 10, 28, 0, 0, 0); // 月份从 0 开始，所以 10=11月
+
         // 过滤规则：
-        // 1. 只要 checkin 帖子：p.source === "checkin"
-        // 2. 作者必须是自己或好友
-        // 3. 必须有 category
+        // - createdAt < cutoff：所有好友 + 自己的帖子都显示（不管是不是 checkin）
+        // - createdAt >= cutoff：只显示 Homepage check-in 的帖子（p.source === "checkin"）
+        // 另外始终要求作者是自己或好友
         const visiblePosts = (postsData || [])
-          .filter((p) => p.source === "checkin") // ⭐ 只要 checkin
-          // .filter(hasValidCategory) // ⭐ 有 category 才展示
           .filter((p) => {
             const a = p.author;
             const authorId =
               typeof a === "string" ? a : a?._id || a?.id || null;
             if (!authorId) return false;
-            return authorId === userId || friendIds.has(authorId);
+
+            const isSelfOrFriend =
+              authorId === userId || friendIds.has(authorId);
+            if (!isSelfOrFriend) return false;
+
+            if (!p.createdAt) return false;
+            const created = new Date(p.createdAt);
+
+            if (created < cutoff) {
+              // 11/27 及之前：好友的所有 post 都显示
+              return true;
+            }
+
+            // 11/28 及之后：只显示 Homepage check-in 的 post
+            return p.source === "checkin";
           })
           // 时间从早到晚
           .sort((a, b) => {
@@ -273,21 +288,15 @@ function FriendsPage() {
         )}
 
         {!loading && error && (
-          <Typography
-            variant="body2"
-            sx={{ mt: 2, color: "#EF4444" }}
-          >
+          <Typography variant="body2" sx={{ mt: 2, color: "#EF4444" }}>
             {error}
           </Typography>
         )}
 
         {!loading && !error && grouped.length === 0 && (
-          <Typography
-            variant="body2"
-            sx={{ mt: 2, color: "#6B7280" }}
-          >
-            No check-ins with categories yet. Start a challenge and tag
-            your posts!
+          <Typography variant="body2" sx={{ mt: 2, color: "#6B7280" }}>
+            No check-ins with categories yet. Start a challenge and tag your
+            posts!
           </Typography>
         )}
 
@@ -537,9 +546,7 @@ function FriendsPage() {
                             onClick={() => handleSubmitComment(postId)}
                             sx={{ ml: 0.5 }}
                           >
-                            <SendIcon
-                              sx={{ fontSize: 18, color: "#7E9B3C" }}
-                            />
+                            <SendIcon sx={{ fontSize: 18, color: "#7E9B3C" }} />
                           </IconButton>
                         </Box>
 
