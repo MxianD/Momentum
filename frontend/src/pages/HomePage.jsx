@@ -30,7 +30,6 @@ function GoalCard({
   title,
   subtitle,
   streak,
-  progressText,
   checkedInToday,
   onCheckIn,
 }) {
@@ -69,24 +68,6 @@ function GoalCard({
           >
             {title}
           </Typography>
-        </Box>
-
-        <Box
-          sx={{
-            width: 40,
-            height: 40,
-            borderRadius: "50%",
-            border: "4px solid #D4D4D4",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "#4B5563",
-            fontSize: 11,
-            fontWeight: 600,
-            bgcolor: "#F5F5F5",
-          }}
-        >
-          {progressText}
         </Box>
       </Box>
 
@@ -161,6 +142,7 @@ function GoalCard({
     </Paper>
   );
 }
+
 
 function HomePage() {
   // 去掉系统内置 goal，初始为空，完全依赖用户加入的 challenge
@@ -544,7 +526,7 @@ function HomePage() {
             <Box
               sx={{
                 mt: 0.5,
-                borderRadius: 999,
+                borderRadius: 2,
                 bgcolor: "rgba(0,0,0,0.15)",
                 p: 1,
               }}
