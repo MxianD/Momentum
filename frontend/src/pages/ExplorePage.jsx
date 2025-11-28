@@ -20,8 +20,8 @@ const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
 
 // 推荐挑战（走马灯，系统默认，先写死在前端）
-// ⚠️ 如果以后你在数据库里给这几个挑战建了真实 _id，可以在这里补上 _id 字段，
-//   这样就能和 friend challenge 一样真正写入用户加入记录。
+// ⚠️ 这三个 _id 必须在数据库里真的有对应的 Challenge 记录（_id 一样），
+//    不然 POST /api/challenges/:id/join 会 404。
 const recommended = [
   {
     _id: "691beb60bcfe398e75f30542",
@@ -33,7 +33,7 @@ const recommended = [
     image: meditationImg,
   },
   {
-    id: "691beb74bcfe398e75f30544",
+    _id: "691beb74bcfe398e75f30544",
     title: "Stay Hydrated",
     leader: "Challenge Leader",
     time: "Daily - 1 week",
@@ -42,7 +42,7 @@ const recommended = [
     image: meditationImg,
   },
   {
-    id: "691beb94bcfe398e75f30548",
+    _id: "691beb94bcfe398e75f30548",
     title: "Morning Stretch",
     leader: "Challenge Leader",
     time: "5 Min / day - 1 week",
@@ -55,9 +55,7 @@ const recommended = [
 function ExplorePage() {
   const [currentIndex, setCurrentIndex] = useState(0);
 
-  // ✅ 用这个 state 存当前弹窗里展示的 challenge
   const [selectedChallenge, setSelectedChallenge] = useState(null);
-
   const [loading, setLoading] = useState(true);
   const [friendChallenges, setFriendChallenges] = useState([]);
   const [joinedChallengeIds, setJoinedChallengeIds] = useState([]);
@@ -110,7 +108,6 @@ function ExplorePage() {
     loadData();
   }, [userId]);
 
-  // 打开走马灯弹窗
   const handleOpenDetail = (challenge) => {
     setSelectedChallenge(challenge);
   };
@@ -128,6 +125,12 @@ function ExplorePage() {
       return;
     }
 
+    if (!challenge?._id) {
+      console.error("Challenge _id missing:", challenge);
+      alert("Invalid challenge id.");
+      return;
+    }
+
     try {
       const res = await fetch(
         `${API_BASE_URL}/challenges/${challenge._id}/join`,
@@ -140,6 +143,7 @@ function ExplorePage() {
 
       if (!res.ok) {
         console.error("Join challenge failed:", res.status);
+        alert("Failed to join challenge.");
         return;
       }
 
@@ -148,27 +152,26 @@ function ExplorePage() {
       );
     } catch (err) {
       console.error("Error joining challenge:", err);
+      alert("Network error. Please try again.");
     }
   };
 
-  // 🔥 推荐（走马灯） challenge 的加入逻辑
-  // 现在这 3 个是“系统默认模板”，前端写死，没有 _id。
-  // 如果以后你在数据库里给它们建了真实 challenge（有 _id），
-  // 可以在 recommended 里补上 _id，这里就可以直接走和 friend 一样的接口。
+  // 推荐（走马灯） challenge 的加入逻辑
   const handleJoinRecommendedChallenge = async (challenge) => {
     if (!userId) {
       alert("Please login first.");
       return;
     }
 
-    if (!challenge._id) {
-      // alert(
-      //   "当前这几个 Recommended 挑战还只是前端模板。\n如果想把它们真正写入数据库并在 Home 里显示，需要先在后端为它们建对应的 challenge 记录，再把 _id 填到前端 recommended 里。"
-      // );
+    if (!challenge?._id) {
+      console.error("Recommended challenge has no _id:", challenge);
+      alert(
+        "This recommended challenge has no linked backend record yet. Please create it in the DB and set _id in recommended[]."
+      );
       return;
     }
 
-    // 如果你已经给这些 recommended 配了 _id，就可以直接复用 friend 的逻辑：
+    // 直接复用 friend 的逻辑
     await handleJoinFriendChallenge(challenge);
   };
 
@@ -216,7 +219,7 @@ function ExplorePage() {
         >
           {recommended.map((item) => (
             <Paper
-              key={item.id}
+              key={item._id}
               onClick={() => handleOpenDetail(item)}
               sx={{
                 flex: "0 0 100%",
@@ -227,9 +230,7 @@ function ExplorePage() {
                 boxSizing: "border-box",
               }}
             >
-              {/* 整张卡片的垂直布局 */}
               <Stack spacing={1.5}>
-                {/* 顶部：Challenge Leader + 右上头像 */}
                 <Stack
                   direction="row"
                   justifyContent="space-between"
@@ -241,9 +242,7 @@ function ExplorePage() {
                   <Avatar sx={{ width: 28, height: 28 }} />
                 </Stack>
 
-                {/* 中部：左文字，右插画 */}
                 <Stack direction="row" spacing={2} alignItems="center">
-                  {/* 左侧文字块 */}
                   <Box sx={{ flex: 1, minWidth: 0 }}>
                     <Typography
                       variant="h6"
@@ -261,7 +260,6 @@ function ExplorePage() {
                     </Typography>
                   </Box>
 
-                  {/* 右侧插画 */}
                   <Box
                     component="img"
                     src={item.image}
@@ -291,7 +289,7 @@ function ExplorePage() {
         >
           {recommended.map((item, index) => (
             <Box
-              key={item.id}
+              key={item._id}
               onClick={() => {
                 setCurrentIndex(index);
                 if (carouselRef.current) {
@@ -442,12 +440,10 @@ function ExplorePage() {
         fullWidth
         maxWidth="sm"
       >
-        {/* 标题 */}
         <DialogTitle sx={{ fontWeight: 700 }}>
           {selectedChallenge?.title}
         </DialogTitle>
 
-        {/* 内容 */}
         <DialogContent dividers>
           <Typography sx={{ mb: 1.5, color: "#6B7280" }}>
             {selectedChallenge?.time}
@@ -471,7 +467,6 @@ function ExplorePage() {
           )}
         </DialogContent>
 
-        {/* 弹窗底部按钮 */}
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={handleCloseDetail}>Close</Button>
 
@@ -482,12 +477,7 @@ function ExplorePage() {
               if (!selectedChallenge) return;
 
               // 推荐 challenge（走马灯那 3 个）
-              if (!selectedChallenge._id) {
-                handleJoinRecommendedChallenge(selectedChallenge);
-              } else {
-                // 理论上不会走到这里，但如果你以后把 friends 也复用这个弹窗，可以走 friend 加入逻辑
-                handleJoinFriendChallenge(selectedChallenge);
-              }
+              handleJoinRecommendedChallenge(selectedChallenge);
 
               handleCloseDetail();
             }}
