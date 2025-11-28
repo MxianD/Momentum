@@ -32,7 +32,7 @@ const systemGoals = [
     id: "system-1",
     title: "Stay hydrated",
     subtitle: "",
-    streak: 5,
+    streak: 1,
     progressText: "4/7",
     checkedInToday: false,
     lastNote: "",
@@ -184,23 +184,6 @@ function GoalCard({
           </Typography>
         </Box>
 
-        <Box
-          sx={{
-            width: 40,
-            height: 40,
-            borderRadius: "50%",
-            border: "4px solid #D4D4D4",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "#4B5563",
-            fontSize: 11,
-            fontWeight: 600,
-            bgcolor: "#F5F5F5",
-          }}
-        >
-          {progressText}
-        </Box>
       </Box>
 
       <Box
