@@ -62,6 +62,37 @@ function parseCategories(raw) {
 }
 
 /**
+ * 统一格式化帖子，返回给前端用
+ */
+function formatPost(doc) {
+  const obj = doc.toObject();
+
+  const upvotesCount = Array.isArray(obj.upvotedBy)
+    ? obj.upvotedBy.length
+    : obj.upvotes ?? 0;
+
+  const downvotesCount = Array.isArray(obj.downvotedBy)
+    ? obj.downvotedBy.length
+    : obj.downvotes ?? 0;
+
+  const bookmarksCount = Array.isArray(obj.bookmarkedBy)
+    ? obj.bookmarkedBy.length
+    : obj.bookmarks ?? 0;
+
+  return {
+    ...obj,
+    authorName: obj.author?.name || "Anonymous",
+    upvotes: upvotesCount,
+    downvotes: downvotesCount,
+    bookmarks: bookmarksCount,
+    comments: (obj.comments || []).map((c) => ({
+      ...c,
+      userName: c.user?.name || "Anonymous",
+    })),
+  };
+}
+
+/**
  * ========= 创建帖子：POST /api/forum/posts =========
  * - 支持两种来源：
  *   1) source: "manual"  → Forum 知识贴（强制要求有 category）
@@ -110,9 +141,7 @@ router.post("/posts", upload.single("media"), async (req, res) => {
       hasMedia = true;
     } else {
       hasMedia =
-        typeof hasMedia === "string"
-          ? hasMedia === "true"
-          : !!hasMedia;
+        typeof hasMedia === "string" ? hasMedia === "true" : !!hasMedia;
     }
 
     const finalTitle =
@@ -132,21 +161,9 @@ router.post("/posts", upload.single("media"), async (req, res) => {
     await newPost.populate("author", "name");
     await newPost.populate("comments.user", "name");
 
-    const obj = newPost.toObject();
-
     res.json({
       success: true,
-      post: {
-        ...obj,
-        authorName: obj.author?.name || "Anonymous",
-        upvotes: obj.upvotes ?? 0,
-        downvotes: obj.downvotes ?? 0,
-        bookmarks: obj.bookmarks ?? 0,
-        comments: (obj.comments || []).map((c) => ({
-          ...c,
-          userName: c.user?.name || "Anonymous",
-        })),
-      },
+      post: formatPost(newPost),
     });
   } catch (err) {
     console.error("Error creating forum post:", err);
@@ -165,22 +182,7 @@ router.get("/posts", async (req, res) => {
       .populate("author", "name")
       .populate("comments.user", "name");
 
-    const mapped = posts.map((p) => {
-      const obj = p.toObject(); // 已包含 virtuals
-
-      return {
-        ...obj,
-        authorName: obj.author?.name || "Anonymous",
-        upvotes: obj.upvotes ?? 0,
-        downvotes: obj.downvotes ?? 0,
-        bookmarks: obj.bookmarks ?? 0,
-        // 给每条评论加 userName，前端好用
-        comments: (obj.comments || []).map((c) => ({
-          ...c,
-          userName: c.user?.name || "Anonymous",
-        })),
-      };
-    });
+    const mapped = posts.map(formatPost);
 
     res.json(mapped);
   } catch (err) {
@@ -211,39 +213,32 @@ router.post("/posts/:id/upvote", async (req, res) => {
     }
 
     const uid = userId.toString();
-    const hasUpvoted = post.upvotedBy.some((u) => u.toString() === uid);
+    const hasUpvoted = (post.upvotedBy || []).some(
+      (u) => u.toString() === uid
+    );
 
     if (hasUpvoted) {
       // 再点一次 -> 取消点赞
       post.upvotedBy = post.upvotedBy.filter((u) => u.toString() !== uid);
     } else {
       // 点赞
+      if (!Array.isArray(post.upvotedBy)) post.upvotedBy = [];
       post.upvotedBy.push(uid);
       // 顺便取消点踩
-      post.downvotedBy = post.downvotedBy.filter(
-        (u) => u.toString() !== uid
-      );
+      if (Array.isArray(post.downvotedBy)) {
+        post.downvotedBy = post.downvotedBy.filter(
+          (u) => u.toString() !== uid
+        );
+      }
     }
 
     await post.save();
     await post.populate("author", "name");
     await post.populate("comments.user", "name");
 
-    const obj = post.toObject();
-
     res.json({
       success: true,
-      post: {
-        ...obj,
-        authorName: obj.author?.name || "Anonymous",
-        upvotes: obj.upvotes ?? 0,
-        downvotes: obj.downvotes ?? 0,
-        bookmarks: obj.bookmarks ?? 0,
-        comments: (obj.comments || []).map((c) => ({
-          ...c,
-          userName: c.user?.name || "Anonymous",
-        })),
-      },
+      post: formatPost(post),
     });
   } catch (err) {
     console.error("Error upvoting post:", err);
@@ -275,7 +270,7 @@ router.post("/posts/:id/downvote", async (req, res) => {
 
     const uid = userId.toString();
 
-    const hasDownvoted = post.downvotedBy.some(
+    const hasDownvoted = (post.downvotedBy || []).some(
       (u) => u.toString() === uid
     );
 
@@ -286,32 +281,23 @@ router.post("/posts/:id/downvote", async (req, res) => {
       );
     } else {
       // 未点踩 -> 添加
+      if (!Array.isArray(post.downvotedBy)) post.downvotedBy = [];
       post.downvotedBy.push(uid);
       // 取消点赞
-      post.upvotedBy = post.upvotedBy.filter(
-        (u) => u.toString() !== uid
-      );
+      if (Array.isArray(post.upvotedBy)) {
+        post.upvotedBy = post.upvotedBy.filter(
+          (u) => u.toString() !== uid
+        );
+      }
     }
 
     await post.save();
     await post.populate("author", "name");
     await post.populate("comments.user", "name");
 
-    const obj = post.toObject();
-
     res.json({
       success: true,
-      post: {
-        ...obj,
-        authorName: obj.author?.name || "Anonymous",
-        upvotes: obj.upvotes ?? 0,
-        downvotes: obj.downvotes ?? 0,
-        bookmarks: obj.bookmarks ?? 0,
-        comments: (obj.comments || []).map((c) => ({
-          ...c,
-          userName: c.user?.name || "Anonymous",
-        })),
-      },
+      post: formatPost(post),
     });
   } catch (err) {
     console.error("Error downvoting post:", err);
@@ -343,7 +329,7 @@ router.post("/posts/:id/bookmark", async (req, res) => {
 
     const uid = userId.toString();
 
-    const hasBookmarked = post.bookmarkedBy.some(
+    const hasBookmarked = (post.bookmarkedBy || []).some(
       (u) => u.toString() === uid
     );
 
@@ -354,6 +340,7 @@ router.post("/posts/:id/bookmark", async (req, res) => {
       );
     } else {
       // 未收藏 -> 收藏
+      if (!Array.isArray(post.bookmarkedBy)) post.bookmarkedBy = [];
       post.bookmarkedBy.push(uid);
     }
 
@@ -361,21 +348,9 @@ router.post("/posts/:id/bookmark", async (req, res) => {
     await post.populate("author", "name");
     await post.populate("comments.user", "name");
 
-    const obj = post.toObject();
-
     res.json({
       success: true,
-      post: {
-        ...obj,
-        authorName: obj.author?.name || "Anonymous",
-        upvotes: obj.upvotes ?? 0,
-        downvotes: obj.downvotes ?? 0,
-        bookmarks: obj.bookmarks ?? 0,
-        comments: (obj.comments || []).map((c) => ({
-          ...c,
-          userName: c.user?.name || "Anonymous",
-        })),
-      },
+      post: formatPost(post),
     });
   } catch (err) {
     console.error("Error bookmarking post:", err);
@@ -412,33 +387,23 @@ router.post("/posts/:id/comments", async (req, res) => {
       createdAt: new Date(),
     };
 
+    if (!Array.isArray(post.comments)) post.comments = [];
     post.comments.push(newComment);
     await post.save();
 
     await post.populate("author", "name");
     await post.populate("comments.user", "name");
 
-    const obj = post.toObject();
-
     res.json({
       success: true,
-      post: {
-        ...obj,
-        authorName: obj.author?.name || "Anonymous",
-        upvotes: obj.upvotes ?? 0,
-        downvotes: obj.downvotes ?? 0,
-        bookmarks: obj.bookmarks ?? 0,
-        comments: (obj.comments || []).map((c) => ({
-          ...c,
-          userName: c.user?.name || "Anonymous",
-        })),
-      },
+      post: formatPost(post),
     });
   } catch (err) {
     console.error("Error adding comment:", err);
     res.status(500).json({ error: "Failed to add comment" });
   }
 });
+
 /**
  * ⭐ 总积分排名：GET /api/forum/ranking/total
  *
