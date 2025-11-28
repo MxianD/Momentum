@@ -75,28 +75,41 @@ function ExplorePage() {
     }
   }, []);
 
-  // 从后端加载好友挑战 + 用户已加入挑战
+  // 从后端加载「好友参加的挑战」+ 「我已加入的挑战」
   useEffect(() => {
     const loadData = async () => {
       try {
         setLoading(true);
 
+        // 没登录就不请求，直接空
+        if (!userId) {
+          setFriendChallenges([]);
+          setJoinedChallengeIds([]);
+          setLoading(false);
+          return;
+        }
+
         const [friendsRes, joinedRes] = await Promise.all([
-          fetch(`${API_BASE_URL}/challenges/friends`),
-          userId
-            ? fetch(`${API_BASE_URL}/challenges/joined/${userId}`)
-            : Promise.resolve({ ok: true, json: async () => [] }),
+          // ⭐ 带上 userId，后端用它找好友
+          fetch(
+            `${API_BASE_URL}/challenges/friends?userId=${encodeURIComponent(
+              userId
+            )}`
+          ),
+          fetch(`${API_BASE_URL}/challenges/joined/${userId}`),
         ]);
 
         if (!friendsRes.ok) throw new Error("Failed to load challenges");
 
         const friends = await friendsRes.json();
-        setFriendChallenges(friends);
+        setFriendChallenges(Array.isArray(friends) ? friends : []);
 
         if (joinedRes.ok) {
           const joinedData = await joinedRes.json(); // UserChallenge[]
           const ids = joinedData.map((uc) => uc.challenge._id);
           setJoinedChallengeIds(ids);
+        } else {
+          setJoinedChallengeIds([]);
         }
       } catch (err) {
         console.error("Error loading explore data", err);
@@ -118,7 +131,7 @@ function ExplorePage() {
 
   const isJoined = (challengeId) => joinedChallengeIds.includes(challengeId);
 
-  // 好友 challenge 的加入（已连后端）
+  // 好友 challenge 的加入
   const handleJoinFriendChallenge = async (challenge) => {
     if (!userId) {
       alert("Please login first.");
@@ -131,7 +144,6 @@ function ExplorePage() {
       return;
     }
 
-    // 如果已经加入了，直接不处理
     if (isJoined(challenge._id)) {
       return;
     }
@@ -176,10 +188,8 @@ function ExplorePage() {
       return;
     }
 
-    // 已加入则不再发送请求
     if (isJoined(challenge._id)) return;
 
-    // 直接复用 friend 的逻辑
     await handleJoinFriendChallenge(challenge);
   };
 
@@ -241,7 +251,7 @@ function ExplorePage() {
                   position: "relative",
                 }}
               >
-                {/* 如果已加入，可以在卡片右上角给个小 tag（可选） */}
+                {/* 右上角只保留 Joined 标签，去掉头像 */}
                 {joined && (
                   <Box
                     sx={{
@@ -262,16 +272,10 @@ function ExplorePage() {
                 )}
 
                 <Stack spacing={1.5}>
-                  <Stack
-                    direction="row"
-                    justifyContent="space-between"
-                    alignItems="center"
-                  >
-                    <Typography variant="body2" sx={{ fontSize: 13 }}>
-                      {item.leader}
-                    </Typography>
-                    <Avatar sx={{ width: 28, height: 28 }} />
-                  </Stack>
+                  {/* 顶部只显示 leader 文案 */}
+                  <Typography variant="body2" sx={{ fontSize: 13 }}>
+                    {item.leader}
+                  </Typography>
 
                   <Stack direction="row" spacing={2} alignItems="center">
                     <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -363,7 +367,16 @@ function ExplorePage() {
           </Box>
         )}
 
-        {!loading && (
+        {!loading && friendChallenges.length === 0 && (
+          <Typography
+            variant="body2"
+            sx={{ mt: 1, color: "#6B7280" }}
+          >
+            No challenges from your friends yet.
+          </Typography>
+        )}
+
+        {!loading && friendChallenges.length > 0 && (
           <Box
             sx={{
               display: "grid",
@@ -425,6 +438,7 @@ function ExplorePage() {
                     alignItems="center"
                     sx={{ mt: 0.5 }}
                   >
+                    {/* 这里先用 3 个占位头像。需要的话可以把 c.participants 显示出来 */}
                     <Stack direction="row" spacing={-0.5}>
                       <Avatar sx={{ width: 22, height: 22 }} />
                       <Avatar sx={{ width: 22, height: 22 }} />
@@ -520,8 +534,7 @@ function ExplorePage() {
             onClick={async () => {
               if (!selectedChallenge) return;
 
-              const joined = isJoined(selectedChallenge._id);
-              if (joined) return; // 已加入则不再 join
+              if (isJoined(selectedChallenge._id)) return;
 
               await handleJoinRecommendedChallenge(selectedChallenge);
               handleCloseDetail();
