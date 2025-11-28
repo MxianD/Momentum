@@ -8,6 +8,7 @@ import Challenge from "../models/Challenge.js";
 import UserChallenge from "../models/UserChallenge.js";
 import ForumPost from "../models/ForumPost.js";
 import User from "../models/User.js";
+
 const router = express.Router();
 
 function isSameDay(d1, d2) {
@@ -40,18 +41,63 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 /**
- * GET /api/challenges/friends
- * 获取“朋友之间的挑战”
+ * GET /api/challenges/friends?userId=xxx
+ * ⭐ 获取“好友正在参加的挑战”（基于 UserChallenge 和好友关系）
  */
 router.get("/friends", async (req, res) => {
   try {
-    const challenges = await Challenge.find({ type: "friend" }).sort({
-      createdAt: -1,
+    const userId = req.query.userId;
+    if (!userId) {
+      return res.status(400).json({ error: "userId is required" });
+    }
+
+    // 1. 获取我的好友列表
+    const user = await User.findById(userId).populate("friends", "_id name");
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const friendIds = user.friends.map((f) => f._id);
+    if (friendIds.length === 0) {
+      return res.json([]); // 没好友就直接空
+    }
+
+    // 2. 找这些好友的 UserChallenge 记录
+    const friendChallenges = await UserChallenge.find({
+      user: { $in: friendIds },
+    })
+      .populate("challenge")
+      .populate("user", "name");
+
+    // 3. 以 challenge 为单位去重
+    const uniqueMap = new Map(); // challengeId -> challengeInfo
+    friendChallenges.forEach((fc) => {
+      const ch = fc.challenge;
+      if (!ch) return;
+      const key = ch._id.toString();
+      if (!uniqueMap.has(key)) {
+        uniqueMap.set(key, {
+          _id: ch._id,
+          title: ch.title,
+          time: ch.time,
+          description: ch.description,
+          type: ch.type,
+          // 方便以后用来展示“哪些好友参加了这个挑战”
+          participants: [],
+        });
+      }
+      const entry = uniqueMap.get(key);
+      entry.participants.push({
+        userId: fc.user._id,
+        userName: fc.user.name,
+      });
     });
-    res.json(challenges);
+
+    const uniqueChallenges = Array.from(uniqueMap.values());
+    res.json(uniqueChallenges);
   } catch (err) {
-    console.error("Error fetching friend challenges", err);
-    res.status(500).json({ error: "Failed to fetch challenges" });
+    console.error("Error fetching friends' challenges:", err);
+    res.status(500).json({ error: "Failed to load challenges" });
   }
 });
 
@@ -114,8 +160,6 @@ router.post("/:id/join", async (req, res) => {
         `[join] Challenge not found by id=${id}, creating a new one automatically...`
       );
 
-      // 自动创建一条 Challenge，_id 使用当前 URL 里的 id
-      // 注意：id 必须是 24 位 hex 才能被转成 ObjectId；你现在写死的 "691beb..." 就是这种格式。
       const challengeData = {
         _id: id, // 使用这串 id 作为 Mongo 的 _id（Mongoose 会自动 cast）
         title: title || "New Challenge",
@@ -145,7 +189,6 @@ router.post("/:id/join", async (req, res) => {
       uc = await uc.populate("challenge");
     }
 
-    // 保持和你原来的返回格式一致（前端当前只用状态码，不依赖结构）
     res.json(uc);
   } catch (err) {
     console.error("Error joining challenge", err);
@@ -238,7 +281,7 @@ router.post("/:id/checkin", upload.single("image"), async (req, res) => {
       title: challenge.title,
       content: note,
       hasMedia: !!imageUrl,
-      imageUrl, // 注意字段名要和 ForumPost 模型一致
+      imageUrl,
       source: "checkin",
       author: userId,
       challenge: challenge._id,
@@ -279,46 +322,6 @@ router.post("/create", async (req, res) => {
   } catch (err) {
     console.error("Error creating challenge", err);
     res.status(500).json({ error: "Failed to create challenge" });
-  }
-});
-
-// ⭐ 获取“好友正在参加的挑战”
-router.get("/friends", async (req, res) => {
-  try {
-    const userId = req.query.userId;
-    if (!userId) {
-      return res.status(400).json({ error: "userId is required" });
-    }
-
-    // 1. 获取我的好友列表
-    const user = await User.findById(userId).populate("friends", "_id name");
-    if (!user) return res.status(404).json({ error: "User not found" });
-
-    const friendIds = user.friends.map(f => f._id);
-
-    if (friendIds.length === 0) {
-      return res.json([]); // 没好友就空列表
-    }
-
-    // 2. 找好友的 UserChallenge
-    const friendChallenges = await UserChallenge.find({
-      user: { $in: friendIds }
-    }).populate("challenge");
-
-    // 3. 去重（同一个 challenge 多个好友可以参加）
-    const uniqueMap = new Map();
-    friendChallenges.forEach(fc => {
-      if (fc.challenge) {
-        uniqueMap.set(fc.challenge._id.toString(), fc.challenge);
-      }
-    });
-
-    const uniqueChallenges = Array.from(uniqueMap.values());
-
-    res.json(uniqueChallenges);
-  } catch (err) {
-    console.error("Error fetching friends' challenges:", err);
-    res.status(500).json({ error: "Failed to load challenges" });
   }
 });
 
