@@ -102,7 +102,12 @@ function ForumPage() {
           throw new Error("Request failed");
         }
 
-        setPosts(Array.isArray(data) ? data : []);
+        // 过滤掉所有 check-in 帖子
+        setPosts(
+          (Array.isArray(data) ? data : []).filter(
+            (p) => p.category !== "checkin" && p.source !== "checkin"
+          )
+        );
       } catch (err) {
         console.error("Error loading forum posts:", err);
         setError("Failed to load posts.");
@@ -419,10 +424,7 @@ function ForumPage() {
                       }}
                     />
                   ) : (
-                    <Typography
-                      variant="caption"
-                      sx={{ color: "#9CA3AF" }}
-                    >
+                    <Typography variant="caption" sx={{ color: "#9CA3AF" }}>
                       No image
                     </Typography>
                   )}
@@ -448,24 +450,14 @@ function ForumPage() {
                         {p.title || "Post"}
                       </Typography>
                       {timeLabel && (
-                        <Typography
-                          variant="caption"
-                          sx={{ color: "#9CA3AF" }}
-                        >
+                        <Typography variant="caption" sx={{ color: "#9CA3AF" }}>
                           {timeLabel}
                         </Typography>
                       )}
                     </Box>
 
-                    <Stack
-                      direction="row"
-                      spacing={1}
-                      alignItems="center"
-                    >
-                      <Typography
-                        variant="caption"
-                        sx={{ color: "#6B7280" }}
-                      >
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Typography variant="caption" sx={{ color: "#6B7280" }}>
                         {authorName}
                       </Typography>
                       <Avatar
@@ -545,10 +537,7 @@ function ForumPage() {
                         sx={{ fontSize: 18, color: "#6B7280" }}
                       />
                     </IconButton>
-                    <Typography
-                      variant="caption"
-                      sx={{ color: "#6B7280" }}
-                    >
+                    <Typography variant="caption" sx={{ color: "#6B7280" }}>
                       {p.downvotes ?? 0}
                     </Typography>
                   </Box>
@@ -592,9 +581,7 @@ function ForumPage() {
                       onClick={() => handleSubmitComment(postId)}
                       sx={{ ml: 0.5 }}
                     >
-                      <SendIcon
-                        sx={{ fontSize: 18, color: "#7E9B3C" }}
-                      />
+                      <SendIcon sx={{ fontSize: 18, color: "#7E9B3C" }} />
                     </IconButton>
                   </Box>
 
@@ -642,9 +629,7 @@ function ForumPage() {
                               >
                                 <IconButton
                                   size="small"
-                                  onClick={() =>
-                                    handleCommentReact(c.id, "up")
-                                  }
+                                  onClick={() => handleCommentReact(c.id, "up")}
                                 >
                                   <ThumbUpOffAltIcon
                                     sx={{
@@ -714,12 +699,8 @@ function ForumPage() {
       >
         <DialogTitle sx={{ fontWeight: 700 }}>New forum post</DialogTitle>
         <DialogContent dividers>
-          <Typography
-            variant="body2"
-            sx={{ mb: 1, color: "#6B7280" }}
-          >
-            Category, title and body are required. You can also add an
-            image.
+          <Typography variant="body2" sx={{ mb: 1, color: "#6B7280" }}>
+            Category, title and body are required. You can also add an image.
           </Typography>
 
           <TextField
@@ -766,20 +747,14 @@ function ForumPage() {
               />
             </Button>
             {newImageFile && (
-              <Typography
-                variant="caption"
-                sx={{ ml: 1, color: "#6B7280" }}
-              >
+              <Typography variant="caption" sx={{ ml: 1, color: "#6B7280" }}>
                 {newImageFile.name}
               </Typography>
             )}
           </Box>
 
           {formError && (
-            <Typography
-              variant="body2"
-              sx={{ mt: 1.5, color: "#EF4444" }}
-            >
+            <Typography variant="body2" sx={{ mt: 1.5, color: "#EF4444" }}>
               {formError}
             </Typography>
           )}
