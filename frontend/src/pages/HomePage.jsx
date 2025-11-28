@@ -26,20 +26,6 @@ import BottomNavBar from "../components/BottomNavBar.jsx";
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
 
-// 系统内置 goal（不依赖数据库）
-const systemGoals = [
-  {
-    id: "system-1",
-    title: "Stay hydrated",
-    subtitle: "",
-    streak: 5,
-    progressText: "4/7",
-    checkedInToday: false,
-    lastNote: "",
-    isSystem: true,
-  },
-];
-
 function GoalCard({
   title,
   subtitle,
