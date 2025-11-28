@@ -439,5 +439,90 @@ router.post("/posts/:id/comments", async (req, res) => {
     res.status(500).json({ error: "Failed to add comment" });
   }
 });
+/**
+ * ⭐ 总积分排名：GET /api/forum/ranking/total
+ *
+ * 规则（简化版实现）：
+ * - 每条打卡（source === "checkin"）基础分：
+ *    Stay hydrated       +5
+ *    Everyday Meditation +6
+ *    Morning Stretch     +3
+ * - 每条“知识贴”（source === "manual"）  +5
+ * - 每个 upvote          +1（忽略每日上限）
+ * - “好贴”：upvotes ≥ 5 或 bookmarks ≥ 3 再 +10
+ *
+ * 最终返回一个数组：[{ userId, name, points, rank }, ...] 按 points 从高到低排序
+ */
+router.get("/ranking/total", async (req, res) => {
+  try {
+    const posts = await ForumPost.find()
+      .populate("author", "name")
+      .exec();
+
+    const scoreMap = new Map(); // authorId -> { userId, name, points }
+
+    const addScore = (authorId, authorName, pts) => {
+      if (!authorId || !pts) return;
+      const key = authorId.toString();
+      const existing = scoreMap.get(key) || {
+        userId: key,
+        name: authorName || "Anonymous",
+        points: 0,
+      };
+      existing.points += pts;
+      scoreMap.set(key, existing);
+    };
+
+    posts.forEach((p) => {
+      const obj = p.toObject();
+      const authorId = obj.author?._id || obj.author;
+      const authorName = obj.author?.name || "Anonymous";
+      if (!authorId) return;
+
+      let base = 0;
+
+      // 基础分：checkin
+      if (obj.source === "checkin") {
+        const title = (obj.title || "").trim();
+        if (title === "Stay hydrated") base += 5;
+        else if (title === "Everyday Meditation") base += 6;
+        else if (title === "Morning Stretch") base += 3;
+      }
+
+      // 基础分：知识贴
+      if (obj.source === "manual") {
+        base += 5;
+      }
+
+      // upvote 分
+      const likeCount = (obj.upvotedBy || []).length;
+      base += likeCount;
+
+      // 好贴奖励
+      const bookmarkCount = (obj.bookmarkedBy || []).length;
+      const isGoodPost = likeCount >= 5 || bookmarkCount >= 3;
+      if (isGoodPost) {
+        base += 10;
+      }
+
+      addScore(authorId, authorName, base);
+    });
+
+    // 转成数组并排序
+    const rankingArray = Array.from(scoreMap.values()).sort(
+      (a, b) => b.points - a.points
+    );
+
+    // 加 rank 字段
+    rankingArray.forEach((item, idx) => {
+      item.rank = idx + 1;
+    });
+
+    res.json(rankingArray);
+  } catch (err) {
+    console.error("Error computing total ranking:", err);
+    res.status(500).json({ error: "Failed to compute ranking" });
+  }
+});
 
 export default router;
