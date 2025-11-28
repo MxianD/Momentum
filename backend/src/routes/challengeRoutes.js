@@ -90,35 +90,62 @@ router.get("/joined/:userId", async (req, res) => {
 /**
  * POST /api/challenges/:id/join
  * 用户加入某个 challenge
+ *
+ * - 对于已存在的 challenge（朋友创建的），按原逻辑 join。
+ * - 对于前端写死 _id 的推荐 challenge：
+ *    如果当前 id 在数据库里找不到，会自动用这个 id 创建一条 Challenge，
+ *    type 默认 "recommended"，然后再为用户创建 UserChallenge。
  */
 router.post("/:id/join", async (req, res) => {
   try {
-    const { id } = req.params; // challengeId
-    const { userId } = req.body;
+    const { id } = req.params; // challengeId（前端 URL 里的那串 24 位 hex）
+    const { userId, title, description, time, type } = req.body;
 
     if (!userId) {
       return res.status(400).json({ error: "userId is required" });
     }
 
-    const challenge = await Challenge.findById(id);
+    // 先尝试按 id 找 challenge
+    let challenge = await Challenge.findById(id);
+
+    // 如果找不到（典型场景：Recommended 那三个 _id 在 DB 里还没建）
     if (!challenge) {
-      return res.status(404).json({ error: "Challenge not found" });
+      console.warn(
+        `[join] Challenge not found by id=${id}, creating a new one automatically...`
+      );
+
+      // 自动创建一条 Challenge，_id 使用当前 URL 里的 id
+      // 注意：id 必须是 24 位 hex 才能被转成 ObjectId；你现在写死的 "691beb..." 就是这种格式。
+      const challengeData = {
+        _id: id, // 使用这串 id 作为 Mongo 的 _id（Mongoose 会自动 cast）
+        title: title || "New Challenge",
+        description: description || "",
+        time: time || "Daily",
+        type: type || "recommended",
+      };
+
+      challenge = await Challenge.create(challengeData);
     }
 
-    // 如果已存在则直接返回
+    // 如果用户已经加入过这个 challenge，就直接返回那条记录
     let uc = await UserChallenge.findOne({
       user: userId,
-      challenge: id,
+      challenge: challenge._id,
     }).populate("challenge");
 
     if (!uc) {
       uc = await UserChallenge.create({
         user: userId,
-        challenge: id,
+        challenge: challenge._id,
+        streak: 0,
+        checkedInToday: false,
+        lastNote: "",
+        lastCheckInAt: null,
       });
       uc = await uc.populate("challenge");
     }
 
+    // 保持和你原来的返回格式一致（前端当前只用状态码，不依赖结构）
     res.json(uc);
   } catch (err) {
     console.error("Error joining challenge", err);
