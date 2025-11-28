@@ -21,6 +21,8 @@ import {
 
 import SendIcon from "@mui/icons-material/Send";
 import AddIcon from "@mui/icons-material/Add";
+import ThumbUpOffAltIcon from "@mui/icons-material/ThumbUpOffAlt";
+import ThumbDownOffAltIcon from "@mui/icons-material/ThumbDownOffAlt";
 
 import BottomNavBar from "../components/BottomNavBar.jsx";
 
@@ -59,14 +61,20 @@ function ForumPage() {
   // 评论草稿：postId -> 文本
   const [commentDrafts, setCommentDrafts] = useState({});
 
+  // 评论本地点赞/点踩状态：commentId -> 'up' | 'down' | null
+  const [commentReactions, setCommentReactions] = useState({});
+
   // 新帖子弹窗
   const [postDialogOpen, setPostDialogOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newBody, setNewBody] = useState("");
-  const [newCategoriesInput, setNewCategoriesInput] = useState(""); // 用户输入的 category 文本
+  const [newCategoriesInput, setNewCategoriesInput] = useState("");
   const [newImageFile, setNewImageFile] = useState(null);
   const [creatingPost, setCreatingPost] = useState(false);
   const [formError, setFormError] = useState("");
+
+  // 帖子点赞/点踩时的“进行中”状态
+  const [votingPostId, setVotingPostId] = useState(null);
 
   // 读当前用户
   useEffect(() => {
@@ -220,6 +228,62 @@ function ForumPage() {
       console.error("Error sending comment:", err);
       alert("Network error. Please try again.");
     }
+  };
+
+  /** 帖子点赞 / 点踩 */
+  const handlePostVote = async (postId, type) => {
+    if (!userId) {
+      alert("Please login first.");
+      return;
+    }
+    if (!postId || (type !== "up" && type !== "down")) return;
+
+    try {
+      setVotingPostId(postId);
+      const endpoint = type === "up" ? "upvote" : "downvote";
+
+      const res = await fetch(
+        `${API_BASE_URL}/forum/posts/${postId}/${endpoint}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId }),
+        }
+      );
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        console.error("Failed to vote post:", data);
+        alert("Failed to vote.");
+        setVotingPostId(null);
+        return;
+      }
+
+      const updatedPost = data.post;
+      if (updatedPost) {
+        setPosts((prev) =>
+          prev.map((p) => (p._id === updatedPost._id ? updatedPost : p))
+        );
+      }
+      setVotingPostId(null);
+    } catch (err) {
+      console.error("Error voting post:", err);
+      alert("Network error. Please try again.");
+      setVotingPostId(null);
+    }
+  };
+
+  /** 评论本地点赞 / 点踩（只前端 UI，不调用后端） */
+  const handleCommentReact = (commentId, type) => {
+    setCommentReactions((prev) => {
+      const current = prev[commentId] || null;
+      let next = type;
+      if (current === type) {
+        // 再点一次同一个 -> 取消
+        next = null;
+      }
+      return { ...prev, [commentId]: next };
+    });
   };
 
   return (
@@ -447,6 +511,48 @@ function ForumPage() {
                     {p.content}
                   </Typography>
 
+                  {/* 帖子点赞/点踩 */}
+                  <Box
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      mb: 0.8,
+                      gap: 0.5,
+                    }}
+                  >
+                    <IconButton
+                      size="small"
+                      onClick={() => handlePostVote(postId, "up")}
+                      disabled={votingPostId === postId}
+                    >
+                      <ThumbUpOffAltIcon
+                        sx={{ fontSize: 18, color: "#6B7280" }}
+                      />
+                    </IconButton>
+                    <Typography
+                      variant="caption"
+                      sx={{ color: "#6B7280", mr: 1 }}
+                    >
+                      {p.upvotes ?? 0}
+                    </Typography>
+
+                    <IconButton
+                      size="small"
+                      onClick={() => handlePostVote(postId, "down")}
+                      disabled={votingPostId === postId}
+                    >
+                      <ThumbDownOffAltIcon
+                        sx={{ fontSize: 18, color: "#6B7280" }}
+                      />
+                    </IconButton>
+                    <Typography
+                      variant="caption"
+                      sx={{ color: "#6B7280" }}
+                    >
+                      {p.downvotes ?? 0}
+                    </Typography>
+                  </Box>
+
                   {/* 评论输入区 */}
                   <Box
                     sx={{
@@ -486,35 +592,90 @@ function ForumPage() {
                       onClick={() => handleSubmitComment(postId)}
                       sx={{ ml: 0.5 }}
                     >
-                      <SendIcon sx={{ fontSize: 18, color: "#7E9B3C" }} />
+                      <SendIcon
+                        sx={{ fontSize: 18, color: "#7E9B3C" }}
+                      />
                     </IconButton>
                   </Box>
 
-                  {/* 已有评论：显示评论用户名字 */}
+                  {/* 已有评论：显示评论用户名字 + 本地点赞/点踩 */}
                   {comments.length > 0 && (
                     <>
                       <Divider sx={{ my: 1 }} />
                       <Box>
-                        {comments.map((c) => (
-                          <Box key={c.id} sx={{ mb: 0.4 }}>
-                            <Typography
-                              variant="caption"
+                        {comments.map((c) => {
+                          const reaction = commentReactions[c.id] || null;
+                          return (
+                            <Box
+                              key={c.id}
                               sx={{
-                                fontWeight: 600,
-                                color: "#111827",
-                                mr: 0.5,
+                                mb: 0.4,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
                               }}
                             >
-                              {c.authorName}:
-                            </Typography>
-                            <Typography
-                              variant="caption"
-                              sx={{ color: "#4B5563" }}
-                            >
-                              {c.text}
-                            </Typography>
-                          </Box>
-                        ))}
+                              <Box sx={{ mr: 1, flex: 1 }}>
+                                <Typography
+                                  variant="caption"
+                                  sx={{
+                                    fontWeight: 600,
+                                    color: "#111827",
+                                    mr: 0.5,
+                                  }}
+                                >
+                                  {c.authorName}:
+                                </Typography>
+                                <Typography
+                                  variant="caption"
+                                  sx={{ color: "#4B5563" }}
+                                >
+                                  {c.text}
+                                </Typography>
+                              </Box>
+
+                              <Box
+                                sx={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                }}
+                              >
+                                <IconButton
+                                  size="small"
+                                  onClick={() =>
+                                    handleCommentReact(c.id, "up")
+                                  }
+                                >
+                                  <ThumbUpOffAltIcon
+                                    sx={{
+                                      fontSize: 16,
+                                      color:
+                                        reaction === "up"
+                                          ? "#16A34A"
+                                          : "#9CA3AF",
+                                    }}
+                                  />
+                                </IconButton>
+                                <IconButton
+                                  size="small"
+                                  onClick={() =>
+                                    handleCommentReact(c.id, "down")
+                                  }
+                                >
+                                  <ThumbDownOffAltIcon
+                                    sx={{
+                                      fontSize: 16,
+                                      color:
+                                        reaction === "down"
+                                          ? "#DC2626"
+                                          : "#9CA3AF",
+                                    }}
+                                  />
+                                </IconButton>
+                              </Box>
+                            </Box>
+                          );
+                        })}
                       </Box>
                     </>
                   )}
