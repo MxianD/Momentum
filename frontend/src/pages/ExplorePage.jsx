@@ -432,23 +432,6 @@ function ExplorePage() {
                     }}
                   />
 
-                  <Stack
-                    direction="row"
-                    justifyContent="space-between"
-                    alignItems="center"
-                    sx={{ mt: 0.5 }}
-                  >
-                    {/* 这里先用 3 个占位头像。需要的话可以把 c.participants 显示出来 */}
-                    <Stack direction="row" spacing={-0.5}>
-                      <Avatar sx={{ width: 22, height: 22 }} />
-                      <Avatar sx={{ width: 22, height: 22 }} />
-                      <Avatar sx={{ width: 22, height: 22 }} />
-                    </Stack>
-
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      5 ⚡
-                    </Typography>
-                  </Stack>
 
                   <Button
                     variant={joined ? "outlined" : "contained"}
