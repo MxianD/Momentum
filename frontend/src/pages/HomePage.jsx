@@ -18,8 +18,6 @@ import {
 import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import FlashOnIcon from "@mui/icons-material/FlashOn";
-import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
-import PersonAddAlt1Icon from "@mui/icons-material/PersonAddAlt1";
 
 import BottomNavBar from "../components/BottomNavBar.jsx";
 
@@ -32,112 +30,13 @@ const systemGoals = [
     id: "system-1",
     title: "Stay hydrated",
     subtitle: "",
-    streak: 1,
+    streak: 5,
     progressText: "4/7",
     checkedInToday: false,
     lastNote: "",
     isSystem: true,
   },
 ];
-
-// 排行榜每一行
-function RankingRow({ rank, value, name, color, isCurrentUser }) {
-  const isTop1 = rank === 1;
-
-  return (
-    <Stack
-      direction="row"
-      alignItems="center"
-      spacing={1}
-      sx={{
-        mb: 0.5,
-        px: 0.8,
-        py: 0.4,
-        borderRadius: 999,
-        bgcolor: isCurrentUser ? "rgba(0,0,0,0.18)" : "transparent",
-      }}
-    >
-      <Typography
-        variant="body2"
-        sx={{
-          width: 20,
-          color: "rgba(255,255,255,0.9)",
-          fontSize: 12,
-        }}
-      >
-        {rank}
-      </Typography>
-
-      <Avatar
-        sx={{
-          width: 20,
-          height: 20,
-          mr: 0.5,
-          bgcolor: isTop1 ? "#FACC15" : "rgba(0,0,0,0.25)",
-          fontSize: 10,
-          color: isTop1 ? "#78350F" : "#F9FAFB",
-          border: isTop1 ? "2px solid #FDE68A" : "none",
-        }}
-      >
-        {isTop1 ? (
-          <EmojiEventsIcon sx={{ fontSize: 16 }} />
-        ) : (
-          (name && name[0]) || rank
-        )}
-      </Avatar>
-
-      <Typography
-        variant="body2"
-        sx={{
-          color: "rgba(255,255,255,0.95)",
-          fontSize: 12,
-          maxWidth: 90,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {name || "Anonymous"}
-      </Typography>
-
-      <Box
-        sx={{
-          flexGrow: 1,
-          height: 6,
-          borderRadius: 999,
-          bgcolor: "rgba(0,0,0,0.25)",
-          overflow: "hidden",
-        }}
-      >
-        <Box
-          sx={{
-            width: `${Math.min(value || 0, 100)}%`,
-            height: "100%",
-            bgcolor: color,
-          }}
-        />
-      </Box>
-
-      <Stack
-        direction="row"
-        spacing={0.4}
-        alignItems="center"
-        sx={{ ml: 0.5 }}
-      >
-        <Typography
-          variant="body2"
-          sx={{
-            fontSize: 12,
-            color: "rgba(255,255,255,0.9)",
-          }}
-        >
-          {value}
-        </Typography>
-        <FlashOnIcon sx={{ fontSize: 14, color: "rgba(255,255,255,0.9)" }} />
-      </Stack>
-    </Stack>
-  );
-}
 
 function GoalCard({
   title,
@@ -184,6 +83,23 @@ function GoalCard({
           </Typography>
         </Box>
 
+        <Box
+          sx={{
+            width: 40,
+            height: 40,
+            borderRadius: "50%",
+            border: "4px solid #D4D4D4",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#4B5563",
+            fontSize: 11,
+            fontWeight: 600,
+            bgcolor: "#F5F5F5",
+          }}
+        >
+          {progressText}
+        </Box>
       </Box>
 
       <Box
@@ -264,21 +180,16 @@ function HomePage() {
 
   const [activeGoalId, setActiveGoalId] = useState(null);
   const [checkInNote, setCheckInNote] = useState("");
-  const [checkInImage, setCheckInImage] = useState(null); // 打卡图片
   const [posting, setPosting] = useState(false);
 
-  // 总排行榜
+  // 排行榜相关
   const [ranking, setRanking] = useState([]);
-  const [visibleCount, setVisibleCount] = useState(5);
-
-  // Add friends
-  const [addFriendsOpen, setAddFriendsOpen] = useState(false);
-  const [allUsers, setAllUsers] = useState([]);
-  const [friends, setFriends] = useState([]);
+  const [myRank, setMyRank] = useState(null);
+  const [rankingError, setRankingError] = useState("");
+  const [showCount, setShowCount] = useState(5); // 显示前 N 名
 
   const activeGoal = goals.find((g) => g.id === activeGoalId) || null;
 
-  // 读取当前用户
   useEffect(() => {
     try {
       const saved = localStorage.getItem("momentumUser");
@@ -306,12 +217,12 @@ function HomePage() {
         const data = await res.json(); // UserChallenge[]
 
         const challengeGoals = data.map((uc) => ({
-          id: uc._id,
+          id: uc._id, // 用 UserChallenge id 作为 goal id
           challengeId: uc.challenge._id,
           title: uc.challenge.title,
           subtitle: "Challenge with your friends",
           streak: uc.streak,
-          progressText: "4/7",
+          progressText: "4/7", // 先写死，之后可以算真实进度
           checkedInToday: uc.checkedInToday,
           lastNote: uc.lastNote,
           isSystem: false,
@@ -329,53 +240,30 @@ function HomePage() {
     loadJoined();
   }, [userId]);
 
-  // 拉取总排行榜
+  // 加载总排行
   useEffect(() => {
-    const loadRanking = async () => {
+    const fetchRanking = async () => {
       try {
+        setRankingError("");
         const res = await fetch(`${API_BASE_URL}/forum/ranking/total`);
-        if (!res.ok) {
-          console.error("Failed to load ranking");
-          return;
+        if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+        const data = await res.json(); // [{ userId, name, points, rank }, ...]
+
+        setRanking(data || []);
+
+        if (userId && Array.isArray(data)) {
+          const mine = data.find((r) => r.userId === userId);
+          setMyRank(mine || null);
         }
-        const data = await res.json();
-        const list = data.ranking || [];
-        setRanking(list);
-        setVisibleCount(5);
       } catch (err) {
-        console.error("Error loading ranking", err);
+        console.error("Failed to load total ranking:", err);
+        setRankingError("Failed to load ranking.");
       }
     };
 
-    loadRanking();
-  }, []);
-
-  // 拉取所有用户 & 当前用户的好友
-  useEffect(() => {
-    if (!userId) return;
-
-    const loadUsersAndFriends = async () => {
-      try {
-        const [allRes, friendsRes] = await Promise.all([
-          fetch(`${API_BASE_URL}/users/all`),
-          fetch(`${API_BASE_URL}/users/${userId}/friends`),
-        ]);
-
-        if (allRes.ok) {
-          const u = await allRes.json();
-          setAllUsers(u);
-        }
-
-        if (friendsRes.ok) {
-          const f = await friendsRes.json();
-          setFriends(f.friends || []);
-        }
-      } catch (err) {
-        console.error("Error loading users/friends:", err);
-      }
-    };
-
-    loadUsersAndFriends();
+    if (userId) {
+      fetchRanking();
+    }
   }, [userId]);
 
   const handleOpenCheckInDialog = (id) => {
@@ -383,42 +271,15 @@ function HomePage() {
     if (!goal || goal.checkedInToday) return;
     setActiveGoalId(id);
     setCheckInNote("");
-    setCheckInImage(null);
   };
 
   const handleCloseDialog = () => {
     if (posting) return;
     setActiveGoalId(null);
     setCheckInNote("");
-    setCheckInImage(null);
   };
 
-  const handleImageChange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) setCheckInImage(file);
-  };
-
-  // 添加好友
-  const handleAddFriend = async (friendId) => {
-    if (!userId || !friendId) return;
-    try {
-      const res = await fetch(`${API_BASE_URL}/users/${userId}/friends`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ friendId }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        console.error("Failed to add friend", data);
-        return;
-      }
-      setFriends(data.friends || []);
-    } catch (err) {
-      console.error("Error adding friend:", err);
-    }
-  };
-
-  // Check in：对系统 goal，用 Forum；对 challenge goal，调用 /challenges/:id/checkin（都支持图片）
+  // Check in：对系统 goal，用 /forum/posts 发“checkin”帖；对 challenge goal，调用 /challenges/:id/checkin
   const handleConfirmCheckIn = async () => {
     if (!activeGoalId || !checkInNote.trim()) return;
     const goal = goals.find((g) => g.id === activeGoalId);
@@ -428,24 +289,19 @@ function HomePage() {
       setPosting(true);
 
       if (!goal.isSystem) {
+        // challenge-based goal：走后端 /challenges/:id/checkin
         if (!userId || !goal.challengeId) {
           alert("User or challenge missing.");
           setPosting(false);
           return;
         }
 
-        const formData = new FormData();
-        formData.append("userId", userId);
-        formData.append("note", checkInNote);
-        if (checkInImage) {
-          formData.append("image", checkInImage);
-        }
-
         const res = await fetch(
           `${API_BASE_URL}/challenges/${goal.challengeId}/checkin`,
           {
             method: "POST",
-            body: formData,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId, note: checkInNote }),
           }
         );
 
@@ -470,32 +326,18 @@ function HomePage() {
           })
         );
       } else {
-        if (!userId) {
-          alert("User missing.");
-          setPosting(false);
-          return;
-        }
-
-        const formData = new FormData();
-        formData.append("title", goal.title);
-        formData.append("content", checkInNote);
-        formData.append("userId", userId);
-        formData.append("source", "checkin");
-        if (checkInImage) {
-          formData.append("image", checkInImage);
-        }
-
-        const res = await fetch(`${API_BASE_URL}/forum/posts`, {
+        // 系统 goal：发一条 check-in 帖子
+        await fetch(`${API_BASE_URL}/forum/posts`, {
           method: "POST",
-          body: formData,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: goal.title,
+            content: checkInNote,
+            hasMedia: false,
+            userId,
+            source: "checkin",
+          }),
         });
-
-        if (!res.ok) {
-          console.error("Forum post failed:", res.status);
-          alert("Failed to post progress. Please try again.");
-          setPosting(false);
-          return;
-        }
 
         setGoals((prev) =>
           prev.map((g) => {
@@ -520,26 +362,8 @@ function HomePage() {
   };
 
   const goalsLeft = goals.filter((g) => !g.checkedInToday).length;
+
   const displayName = currentUser?.name || "Amy";
-
-  // 计算“我的位置”
-  const myIndex = userId
-    ? ranking.findIndex((r) => r.userId === userId)
-    : -1;
-  const myRank = myIndex >= 0 ? myIndex + 1 : null;
-  const myPoints =
-    myIndex >= 0 ? ranking[myIndex].totalPoints : null;
-
-  const canShowMore = visibleCount < ranking.length;
-
-  const handleShowMore = () => {
-    if (!canShowMore) return;
-    setVisibleCount((prev) =>
-      Math.min(prev + 5, ranking.length)
-    );
-  };
-
-  const friendsIds = friends.map((f) => f._id);
 
   return (
     <Box
@@ -549,7 +373,7 @@ function HomePage() {
         flexDirection: "column",
       }}
     >
-      {/* 顶部绿色区域 + 总排行榜 + Add friends 按钮 */}
+      {/* 顶部绿色区域 + 总排行 */}
       <Box
         sx={{
           bgcolor: "#516E1F",
@@ -562,133 +386,188 @@ function HomePage() {
           boxShadow: "0 12px 25px rgba(0,0,0,0.25)",
         }}
       >
-        <Box
+        <Typography
+          variant="h6"
           sx={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
+            fontWeight: 700,
+            fontSize: 22,
             mb: 1,
           }}
         >
-          <Typography
-            variant="h6"
-            sx={{
-              fontWeight: 700,
-              fontSize: 22,
-            }}
-          >
-            Hello, {displayName}!
-          </Typography>
-
-          <Button
-            size="small"
-            variant="outlined"
-            startIcon={<PersonAddAlt1Icon sx={{ fontSize: 16 }} />}
-            onClick={() => setAddFriendsOpen(true)}
-            sx={{
-              textTransform: "none",
-              borderRadius: 999,
-              borderColor: "rgba(255,255,255,0.8)",
-              color: "rgba(255,255,255,0.9)",
-              paddingY: 0.4,
-              paddingX: 1.4,
-              fontSize: 12,
-            }}
-          >
-            Add friends
-          </Button>
-        </Box>
+          Hello, {displayName}!
+        </Typography>
 
         <Typography
           variant="body2"
-          sx={{
-            color: "rgba(255,255,255,0.9)",
-            fontWeight: 500,
-            mb: 0.5,
-            fontSize: 13,
-          }}
+          sx={{ fontWeight: 600, mb: 0.5 }}
         >
           Total ranking
         </Typography>
 
-        {myRank && myPoints != null && (
+        {rankingError && (
           <Typography
             variant="caption"
-            sx={{
-              display: "block",
-              color: "rgba(255,255,255,0.85)",
-              mb: 1,
-            }}
+            sx={{ color: "#FCA5A5" }}
           >
-            You are <strong>#{myRank}</strong> with{" "}
-            <strong>{myPoints}</strong> pts.
+            {rankingError}
           </Typography>
         )}
 
-        <Box
-          sx={{
-            borderRadius: 2,
-            bgcolor: "rgba(0,0,0,0.12)",
-            p: 0.8,
-          }}
-        >
-          {ranking.slice(0, visibleCount).map((r, index) => (
-            <RankingRow
-              key={r.userId}
-              rank={index + 1}
-              name={r.name}
-              value={r.totalPoints}
-              color={index === 0 ? "#E7FF90" : "#AEB7FF"}
-              isCurrentUser={r.userId === userId}
-            />
-          ))}
+        {!rankingError && ranking.length > 0 && (
+          <>
+            {myRank ? (
+              <Typography variant="body2" sx={{ mb: 1 }}>
+                You are #{myRank.rank} with{" "}
+                <strong>{myRank.points}</strong> pts.
+              </Typography>
+            ) : (
+              <Typography variant="body2" sx={{ mb: 1 }}>
+                Join challenges and share posts to earn points!
+              </Typography>
+            )}
 
-          {ranking.length === 0 && (
-            <Typography
-              variant="caption"
-              sx={{
-                color: "rgba(255,255,255,0.8)",
-                px: 0.5,
-                py: 0.3,
-                display: "block",
-              }}
-            >
-              No ranking data yet.
-            </Typography>
-          )}
-
-          {canShowMore && (
             <Box
-              onClick={handleShowMore}
               sx={{
                 mt: 0.5,
-                py: 0.4,
                 borderRadius: 999,
-                bgcolor: "rgba(0,0,0,0.16)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                cursor: "pointer",
-                "&:active": {
-                  transform: "scale(0.99)",
-                },
+                bgcolor: "rgba(0,0,0,0.15)",
+                p: 1,
               }}
             >
-              <Typography
-                variant="caption"
-                sx={{
-                  color: "rgba(255,255,255,0.9)",
-                  fontWeight: 500,
-                }}
-              >
-                Show next 5
-              </Typography>
+              {ranking.slice(0, showCount).map((r, index) => {
+                const isTop1 = r.rank === 1;
+                const isMe = userId && r.userId === userId;
+
+                return (
+                  <Box
+                    key={r.userId}
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      mb: index === showCount - 1 ? 0 : 0.5,
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        width: 18,
+                        textAlign: "center",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        mr: 1,
+                      }}
+                    >
+                      {isTop1 ? "👑" : r.rank}
+                    </Box>
+
+                    <Avatar
+                      sx={{
+                        width: 20,
+                        height: 20,
+                        mr: 1,
+                        bgcolor: isMe
+                          ? "#FBBF24"
+                          : "rgba(0,0,0,0.35)",
+                        fontSize: 11,
+                      }}
+                    >
+                      {(r.name || "A")[0]}
+                    </Avatar>
+
+                    <Box sx={{ flexGrow: 1 }}>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          mb: 0.3,
+                        }}
+                      >
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            color: isMe
+                              ? "#FEF9C3"
+                              : "rgba(255,255,255,0.9)",
+                            fontWeight: isMe ? 700 : 500,
+                          }}
+                        >
+                          {isMe ? "You" : r.name}
+                        </Typography>
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 0.3,
+                            color: "rgba(255,255,255,0.9)",
+                          }}
+                        >
+                          {r.points}
+                          <span style={{ fontSize: 10 }}>⚡</span>
+                        </Typography>
+                      </Box>
+
+                      <Box
+                        sx={{
+                          height: 6,
+                          borderRadius: 999,
+                          bgcolor: "rgba(0,0,0,0.35)",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            height: "100%",
+                            width: `${
+                              ranking[0]
+                                ? Math.round(
+                                    (r.points /
+                                      ranking[0].points) *
+                                      100
+                                  )
+                                : 0
+                            }%`,
+                            bgcolor: isTop1
+                              ? "#FACC15"
+                              : isMe
+                              ? "#A5B4FC"
+                              : "#E5F2C0",
+                          }}
+                        />
+                      </Box>
+                    </Box>
+                  </Box>
+                );
+              })}
             </Box>
-          )}
-        </Box>
+
+            {showCount < ranking.length && (
+              <Box sx={{ mt: 1 }}>
+                <Button
+                  size="small"
+                  onClick={() =>
+                    setShowCount((prev) =>
+                      Math.min(prev + 5, ranking.length)
+                    )
+                  }
+                  sx={{
+                    textTransform: "none",
+                    fontSize: 12,
+                    color: "#EEF2FF",
+                    px: 1.5,
+                    borderRadius: 999,
+                    border: "1px solid rgba(255,255,255,0.4)",
+                  }}
+                >
+                  Show next 5
+                </Button>
+              </Box>
+            )}
+          </>
+        )}
       </Box>
 
-      {/* 中间白色内容区域 */}
+      {/* 中间白色内容区域：goals */}
       <Box
         sx={{
           flexGrow: 1,
@@ -756,35 +635,7 @@ function HomePage() {
             placeholder="E.g. Drank 6 cups of water today..."
             value={checkInNote}
             onChange={(e) => setCheckInNote(e.target.value)}
-            sx={{ mb: 2 }}
           />
-
-          <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-            <Button variant="outlined" component="label" size="small">
-              Upload image
-              <input
-                type="file"
-                accept="image/*"
-                hidden
-                onChange={handleImageChange}
-              />
-            </Button>
-
-            {checkInImage && (
-              <Box
-                component="img"
-                src={URL.createObjectURL(checkInImage)}
-                alt="preview"
-                sx={{
-                  width: 80,
-                  height: 80,
-                  borderRadius: 2,
-                  objectFit: "cover",
-                  border: "1px solid #E5E7EB",
-                }}
-              />
-            )}
-          </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseDialog} disabled={posting}>
@@ -797,90 +648,6 @@ function HomePage() {
           >
             {posting ? "Posting..." : "Post progress"}
           </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Add friends 弹窗 */}
-      <Dialog
-        open={addFriendsOpen}
-        onClose={() => setAddFriendsOpen(false)}
-        fullWidth
-      >
-        <DialogTitle>Add friends</DialogTitle>
-        <DialogContent dividers>
-          {allUsers.map((u) => {
-            const isSelf = u._id === userId;
-            const isFriend = friendsIds.includes(u._id);
-
-            return (
-              <Box
-                key={u._id}
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  py: 1,
-                }}
-              >
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <Avatar
-                    sx={{
-                      width: 28,
-                      height: 28,
-                      bgcolor: "#9CA3AF",
-                      fontSize: 14,
-                    }}
-                  >
-                    {u.name?.[0] || "U"}
-                  </Avatar>
-                  <Typography variant="body2">{u.name}</Typography>
-                </Stack>
-
-                {isSelf ? (
-                  <Typography
-                    variant="caption"
-                    sx={{ color: "#6B7280" }}
-                  >
-                    You
-                  </Typography>
-                ) : isFriend ? (
-                  <Button
-                    size="small"
-                    disabled
-                    sx={{
-                      textTransform: "none",
-                      borderRadius: 999,
-                      bgcolor: "#E5E7EB",
-                      color: "#4B5563",
-                    }}
-                  >
-                    Added
-                  </Button>
-                ) : (
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    onClick={() => handleAddFriend(u._id)}
-                    sx={{
-                      textTransform: "none",
-                      borderRadius: 999,
-                    }}
-                  >
-                    Add
-                  </Button>
-                )}
-              </Box>
-            );
-          })}
-
-          {allUsers.length === 0 && (
-            <Typography variant="body2" sx={{ color: "#6B7280" }}>
-              No users yet.
-            </Typography>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setAddFriendsOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
 
