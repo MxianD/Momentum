@@ -13,6 +13,7 @@ import {
   DialogContent,
   DialogActions,
   TextField,
+  CircularProgress,
 } from "@mui/material";
 
 import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined";
@@ -193,7 +194,13 @@ function HomePage() {
   const [friends, setFriends] = useState([]);
   const [friendsLoading, setFriendsLoading] = useState(false);
   const [friendsError, setFriendsError] = useState("");
-  const [addingFriends, setAddingFriends] = useState(false);
+
+  // “添加好友”弹窗 & 所有用户列表
+  const [friendsDialogOpen, setFriendsDialogOpen] = useState(false);
+  const [allUsers, setAllUsers] = useState([]);
+  const [allUsersLoading, setAllUsersLoading] = useState(false);
+  const [allUsersError, setAllUsersError] = useState("");
+  const [addingId, setAddingId] = useState(null); // 正在添加的 userId
 
   const activeGoal = goals.find((g) => g.id === activeGoalId) || null;
 
@@ -224,12 +231,12 @@ function HomePage() {
         const data = await res.json(); // UserChallenge[]
 
         const challengeGoals = data.map((uc) => ({
-          id: uc._id, // 用 UserChallenge id 作为 goal id
+          id: uc._id,
           challengeId: uc.challenge._id,
           title: uc.challenge.title,
           subtitle: "Challenge with your friends",
           streak: uc.streak,
-          progressText: "4/7", // 先写死，之后可以算真实进度
+          progressText: "4/7",
           checkedInToday: uc.checkedInToday,
           lastNote: uc.lastNote,
           isSystem: false,
@@ -308,35 +315,88 @@ function HomePage() {
     loadFriends();
   }, [userId]);
 
-  const handleAddAllFriends = async () => {
-    if (!userId) return;
+  const friendsCount = friends.length;
+  const friendIdSet = new Set(friends.map((f) => f._id));
+
+  // 打开“Add friends” 弹窗时，加载所有用户列表
+  const handleOpenFriendsDialog = async () => {
+    setFriendsDialogOpen(true);
+
+    if (allUsers.length > 0 || !userId) return; // 已经加载过就不再请求
+
     try {
-      setAddingFriends(true);
+      setAllUsersLoading(true);
+      setAllUsersError("");
+
+      // ⚠️ 这里假设有 GET /api/users 返回所有用户
+      const res = await fetch(`${API_BASE_URL}/users`);
+      const data = await res.json().catch(() => []);
+
+      if (!res.ok) {
+        console.error("Failed to fetch all users:", data);
+        setAllUsersError("Failed to load users.");
+        setAllUsers([]);
+        return;
+      }
+
+      setAllUsers(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Error loading all users:", err);
+      setAllUsersError("Failed to load users.");
+      setAllUsers([]);
+    } finally {
+      setAllUsersLoading(false);
+    }
+  };
+
+  const handleCloseFriendsDialog = () => {
+    setFriendsDialogOpen(false);
+  };
+
+  // 点击某个用户的「Add」按钮
+  const handleAddFriend = async (targetId) => {
+    if (!userId || !targetId || targetId === userId) return;
+
+    try {
+      setAddingId(targetId);
+      // ⚠️ 这里假设有 POST /api/users/:userId/friends/add  body:{friendId}
       const res = await fetch(
-        `${API_BASE_URL}/users/${userId}/friends/add-all`,
+        `${API_BASE_URL}/users/${userId}/friends/add`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ friendId: targetId }),
         }
       );
       const data = await res.json().catch(() => ({}));
+
       if (!res.ok) {
-        console.error("Failed to add friends:", data);
-        alert("Failed to add friends.");
-      } else {
-        // 成功后重新拉一次朋友列表
-        const list = Array.isArray(data.friends)
-          ? data.friends
-          : Array.isArray(data)
-          ? data
-          : [];
+        console.error("Failed to add friend:", data);
+        alert("Failed to add friend.");
+        return;
+      }
+
+      // 成功后更新 friends 列表（兼容两种返回格式）
+      const list = Array.isArray(data.friends)
+        ? data.friends
+        : Array.isArray(data)
+        ? data
+        : [];
+      if (list.length > 0) {
         setFriends(list);
+      } else {
+        // 如果后端没返回完整列表，就手动在前端追加一个
+        const newUser =
+          allUsers.find((u) => u._id === targetId) || null;
+        if (newUser) {
+          setFriends((prev) => [...prev, newUser]);
+        }
       }
     } catch (err) {
-      console.error("Error adding friends:", err);
-      alert("Network error when adding friends.");
+      console.error("Error adding friend:", err);
+      alert("Network error when adding friend.");
     } finally {
-      setAddingFriends(false);
+      setAddingId(null);
     }
   };
 
@@ -363,7 +423,6 @@ function HomePage() {
       setPosting(true);
 
       if (!goal.isSystem) {
-        // challenge-based goal：走后端 /challenges/:id/checkin
         if (!userId || !goal.challengeId) {
           alert("User or challenge missing.");
           setPosting(false);
@@ -436,10 +495,7 @@ function HomePage() {
   };
 
   const goalsLeft = goals.filter((g) => !g.checkedInToday).length;
-
   const displayName = currentUser?.name || "Amy";
-
-  const friendsCount = friends.length;
 
   return (
     <Box
@@ -473,11 +529,7 @@ function HomePage() {
           Hello, {displayName}!
         </Typography>
 
-        {/* 排名标题 */}
-        <Typography
-          variant="body2"
-          sx={{ fontWeight: 600, mb: 0.5 }}
-        >
+        <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
           Total ranking
         </Typography>
 
@@ -503,7 +555,6 @@ function HomePage() {
               </Typography>
             )}
 
-            {/* 排名条 */}
             <Box
               sx={{
                 mt: 0.5,
@@ -599,8 +650,7 @@ function HomePage() {
                             width: `${
                               ranking[0]
                                 ? Math.round(
-                                    (r.points /
-                                      ranking[0].points) *
+                                    (r.points / ranking[0].points) *
                                       100
                                   )
                                 : 0
@@ -644,7 +694,7 @@ function HomePage() {
           </>
         )}
 
-        {/* Add friends 区块 */}
+        {/* Add friends 概览条 */}
         <Box
           sx={{
             mt: 2,
@@ -689,8 +739,7 @@ function HomePage() {
 
           <Button
             size="small"
-            onClick={handleAddAllFriends}
-            disabled={addingFriends}
+            onClick={handleOpenFriendsDialog}
             sx={{
               textTransform: "none",
               borderRadius: 999,
@@ -705,7 +754,7 @@ function HomePage() {
               },
             }}
           >
-            {addingFriends ? "Adding..." : "Add all friends"}
+            Add friends
           </Button>
         </Box>
       </Box>
@@ -791,6 +840,116 @@ function HomePage() {
           >
             {posting ? "Posting..." : "Post progress"}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Add friends 弹窗 */}
+      <Dialog
+        open={friendsDialogOpen}
+        onClose={handleCloseFriendsDialog}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Select friends</DialogTitle>
+        <DialogContent dividers sx={{ maxHeight: 400 }}>
+          {allUsersLoading && (
+            <Box
+              sx={{
+                display: "flex",
+                justifyContent: "center",
+                mt: 2,
+              }}
+            >
+              <CircularProgress size={24} />
+            </Box>
+          )}
+
+          {!allUsersLoading && allUsersError && (
+            <Typography
+              variant="body2"
+              sx={{ color: "#EF4444", mt: 1 }}
+            >
+              {allUsersError}
+            </Typography>
+          )}
+
+          {!allUsersLoading &&
+            !allUsersError &&
+            allUsers.map((u) => {
+              const isMe = u._id === userId;
+              const isFriend = friendIdSet.has(u._id);
+              const disabled = isMe || isFriend || addingId === u._id;
+
+              let label = "Add";
+              if (isMe) label = "You";
+              else if (isFriend) label = "Added";
+              else if (addingId === u._id) label = "Adding...";
+
+              return (
+                <Box
+                  key={u._id}
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    py: 1,
+                  }}
+                >
+                  <Stack
+                    direction="row"
+                    spacing={1}
+                    alignItems="center"
+                  >
+                    <Avatar
+                      sx={{
+                        width: 32,
+                        height: 32,
+                        bgcolor: "#111827",
+                        fontSize: 14,
+                      }}
+                    >
+                      {(u.name || "A")[0]}
+                    </Avatar>
+                    <Typography variant="body2">
+                      {u.name}
+                    </Typography>
+                  </Stack>
+
+                  <Button
+                    size="small"
+                    disabled={disabled}
+                    onClick={() => handleAddFriend(u._id)}
+                    sx={{
+                      textTransform: "none",
+                      borderRadius: 999,
+                      px: 1.6,
+                      fontSize: 12,
+                      bgcolor: disabled ? "#E5E7EB" : "#516E1F",
+                      color: disabled ? "#6B7280" : "#FFFFFF",
+                      "&:hover": {
+                        bgcolor: disabled ? "#E5E7EB" : "#3F5A16",
+                      },
+                    }}
+                  >
+                    {label}
+                  </Button>
+                </Box>
+              );
+            })}
+
+          {!allUsersLoading &&
+            !allUsersError &&
+            allUsers.length === 0 && (
+              <Typography
+                variant="body2"
+                sx={{ mt: 1, color: "#6B7280" }}
+              >
+                No other users yet.
+              </Typography>
+            )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseFriendsDialog}>Close</Button>
         </DialogActions>
       </Dialog>
 
