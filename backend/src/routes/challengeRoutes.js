@@ -199,34 +199,24 @@ router.post("/:id/join", async (req, res) => {
 /**
  * POST /api/challenges/:id/checkin
  * 用户对某个 challenge 打卡（支持文字 + 可选图片）
- * 前端用 FormData: userId, note, image
  */
 router.post("/:id/checkin", upload.single("image"), async (req, res) => {
   try {
     const { id } = req.params; // challengeId
-
-    // FormData 情况下，字段从 req.body 取
     const userId = req.body.userId;
     const note = req.body.note;
 
     if (!userId || !note?.trim()) {
-      console.log("Invalid checkin body:", req.body);
-      return res
-        .status(400)
-        .json({ error: "userId and note are required" });
+      return res.status(400).json({ error: "userId and note are required" });
     }
 
     const challenge = await Challenge.findById(id);
-    if (!challenge) {
-      return res.status(404).json({ error: "Challenge not found" });
-    }
+    if (!challenge) return res.status(404).json({ error: "Challenge not found" });
 
-    let uc = await UserChallenge.findOne({
-      user: userId,
-      challenge: id,
-    });
+    let uc = await UserChallenge.findOne({ user: userId, challenge: id });
 
     const now = new Date();
+    const last = uc?.lastCheckInAt ? new Date(uc.lastCheckInAt) : null;
 
     if (!uc) {
       // 第一次加入+打卡
@@ -239,26 +229,19 @@ router.post("/:id/checkin", upload.single("image"), async (req, res) => {
         lastCheckInAt: now,
       });
     } else {
-      const last = uc.lastCheckInAt ? new Date(uc.lastCheckInAt) : null;
-
       if (last && isSameDay(last, now)) {
-        // 今天已经打过卡了，不重复加 streak
         return res.json({
           userChallenge: await uc.populate("challenge"),
           forumPost: null,
         });
       }
 
-      // 计算连续天数
+      // streak 计算
       let newStreak = 1;
       if (last) {
         const diffMs = now - last;
         const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-        if (diffDays === 1) {
-          newStreak = uc.streak + 1;
-        } else {
-          newStreak = 1;
-        }
+        if (diffDays === 1) newStreak = uc.streak + 1;
       }
 
       uc.streak = newStreak;
@@ -270,24 +253,25 @@ router.post("/:id/checkin", upload.single("image"), async (req, res) => {
 
     uc = await uc.populate("challenge");
 
-    // 处理图片：multer 已经把文件放在 req.file 里
+    // 处理图片
     let imageUrl = null;
     if (req.file) {
       imageUrl = `/uploads/${req.file.filename}`;
     }
 
-    // 在论坛中创建对应帖子
+    // ⭐ 创建带 category 的论坛帖子
     const post = await ForumPost.create({
       title: challenge.title,
       content: note,
       hasMedia: !!imageUrl,
       imageUrl,
       source: "checkin",
+      category: "checkin",        // ⭐ 强制添加 category！
       author: userId,
       challenge: challenge._id,
     });
 
-    res.json({
+    return res.json({
       userChallenge: uc,
       forumPost: post,
     });
