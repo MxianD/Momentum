@@ -26,10 +26,23 @@ import BottomNavBar from "../components/BottomNavBar.jsx";
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
 
+// 现在不再使用内置默认 challenge，留空即可
+const systemGoals = [];
+
+// 根据 challenge 标题返回每次打卡的加分
+function getPointsForChallengeTitle(title) {
+  if (!title) return 0;
+  if (title === "Everyday Meditation") return 6;
+  if (title === "Stay Hydrated") return 5;
+  if (title === "Morning Stretch") return 3;
+  return 0;
+}
+
 function GoalCard({
   title,
   subtitle,
   streak,
+  points,
   checkedInToday,
   onCheckIn,
 }) {
@@ -109,7 +122,8 @@ function GoalCard({
               variant="caption"
               sx={{ color: "#111827", fontWeight: 500 }}
             >
-              {streak}
+              {/* 显示每次打卡加分，若不存在则退回 streak 或 0 */}
+              {points ?? streak ?? 0}
             </Typography>
             <FlashOnIcon sx={{ fontSize: 14 }} />
           </Box>
@@ -143,10 +157,8 @@ function GoalCard({
   );
 }
 
-
 function HomePage() {
-  // 去掉系统内置 goal，初始为空，完全依赖用户加入的 challenge
-  const [goals, setGoals] = useState([]);
+  const [goals, setGoals] = useState(systemGoals);
   const [currentUser, setCurrentUser] = useState(null);
 
   const [activeGoalId, setActiveGoalId] = useState(null);
@@ -190,9 +202,7 @@ function HomePage() {
 
     const loadJoined = async () => {
       try {
-        const res = await fetch(
-          `${API_BASE_URL}/challenges/joined/${userId}`
-        );
+        const res = await fetch(`${API_BASE_URL}/challenges/joined/${userId}`);
         if (!res.ok) {
           console.error("Failed to load user challenges");
           return;
@@ -205,14 +215,17 @@ function HomePage() {
           title: uc.challenge.title,
           subtitle: "Challenge with your friends",
           streak: uc.streak,
-          progressText: "4/7", // 这里可以以后改成真实进度
           checkedInToday: uc.checkedInToday,
           lastNote: uc.lastNote,
           isSystem: false,
+          // 每次打卡加分（6 / 5 / 3）
+          pointsPerCheckin: getPointsForChallengeTitle(uc.challenge.title),
         }));
 
-        // 现在不再保留系统 goals，直接用 challengeGoals 覆盖
-        setGoals(challengeGoals);
+        setGoals((prev) => {
+          const system = prev.filter((g) => g.isSystem);
+          return [...system, ...challengeGoals];
+        });
       } catch (err) {
         console.error("Error loading joined challenges", err);
       }
@@ -326,15 +339,12 @@ function HomePage() {
 
     try {
       setAddingId(targetId);
-      // POST /api/users/:userId/friends  body:{friendId}
-      const res = await fetch(
-        `${API_BASE_URL}/users/${userId}/friends`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ friendId: targetId }),
-        }
-      );
+      // POST /api/users/:userId/friends
+      const res = await fetch(`${API_BASE_URL}/users/${userId}/friends`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ friendId: targetId }),
+      });
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
@@ -353,8 +363,7 @@ function HomePage() {
         setFriends(list);
       } else {
         // 如果后端没返回完整列表，就手动在前端追加一个
-        const newUser =
-          allUsers.find((u) => u._id === targetId) || null;
+        const newUser = allUsers.find((u) => u._id === targetId) || null;
         if (newUser) {
           setFriends((prev) => [...prev, newUser]);
         }
@@ -380,8 +389,7 @@ function HomePage() {
     setCheckInNote("");
   };
 
-  // Check in：对于 challenge goal，调用 /challenges/:id/checkin
-  // （系统 goal 分支保留，但现在不会用到）
+  // Check in：对系统 goal，用 /forum/posts 发“checkin”帖；对 challenge goal，调用 /challenges/:id/checkin
   const handleConfirmCheckIn = async () => {
     if (!activeGoalId || !checkInNote.trim()) return;
     const goal = goals.find((g) => g.id === activeGoalId);
@@ -423,11 +431,12 @@ function HomePage() {
               streak: userChallenge.streak,
               checkedInToday: userChallenge.checkedInToday,
               lastNote: userChallenge.lastNote,
+              // pointsPerCheckin 保持不变
             };
           })
         );
       } else {
-        // 如果以后想再加系统 goal，可以使用这一段逻辑
+        // 系统 goal：发一条 check-in 帖子
         await fetch(`${API_BASE_URL}/forum/posts`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -502,10 +511,7 @@ function HomePage() {
         </Typography>
 
         {rankingError && (
-          <Typography
-            variant="caption"
-            sx={{ color: "#FCA5A5" }}
-          >
+          <Typography variant="caption" sx={{ color: "#FCA5A5" }}>
             {rankingError}
           </Typography>
         )}
@@ -526,7 +532,7 @@ function HomePage() {
             <Box
               sx={{
                 mt: 0.5,
-                borderRadius: 2,
+                borderRadius: 999,
                 bgcolor: "rgba(0,0,0,0.15)",
                 p: 1,
               }}
@@ -561,9 +567,7 @@ function HomePage() {
                         width: 20,
                         height: 20,
                         mr: 1,
-                        bgcolor: isMe
-                          ? "#FBBF24"
-                          : "rgba(0,0,0,0.35)",
+                        bgcolor: isMe ? "#FBBF24" : "rgba(0,0,0,0.35)",
                         fontSize: 11,
                       }}
                     >
@@ -582,9 +586,7 @@ function HomePage() {
                         <Typography
                           variant="caption"
                           sx={{
-                            color: isMe
-                              ? "#FEF9C3"
-                              : "rgba(255,255,255,0.9)",
+                            color: isMe ? "#FEF9C3" : "rgba(255,255,255,0.9)",
                             fontWeight: isMe ? 700 : 500,
                           }}
                         >
@@ -618,8 +620,7 @@ function HomePage() {
                             width: `${
                               ranking[0]
                                 ? Math.round(
-                                    (r.points / ranking[0].points) *
-                                      100
+                                    (r.points / ranking[0].points) * 100
                                   )
                                 : 0
                             }%`,
@@ -642,9 +643,7 @@ function HomePage() {
                 <Button
                   size="small"
                   onClick={() =>
-                    setShowCount((prev) =>
-                      Math.min(prev + 5, ranking.length)
-                    )
+                    setShowCount((prev) => Math.min(prev + 5, ranking.length))
                   }
                   sx={{
                     textTransform: "none",
@@ -768,20 +767,13 @@ function HomePage() {
             title={g.title}
             subtitle={g.subtitle}
             streak={g.streak}
-            progressText={g.progressText}
+            points={
+              g.pointsPerCheckin ?? getPointsForChallengeTitle(g.title)
+            }
             checkedInToday={g.checkedInToday}
             onCheckIn={() => handleOpenCheckInDialog(g.id)}
           />
         ))}
-
-        {goals.length === 0 && (
-          <Typography
-            variant="body2"
-            sx={{ mt: 1, color: "#6B7280" }}
-          >
-            You haven&apos;t joined any challenges yet.
-          </Typography>
-        )}
       </Box>
 
       {/* 打卡弹窗 */}
@@ -790,12 +782,8 @@ function HomePage() {
           {activeGoal ? `Check in - ${activeGoal.title}` : "Check in"}
         </DialogTitle>
         <DialogContent dividers>
-          <Typography
-            variant="body2"
-            sx={{ mb: 1.5, color: "#6B7280" }}
-          >
-            Share your progress for today. What did you do for this
-            challenge?
+          <Typography variant="body2" sx={{ mb: 1.5, color: "#6B7280" }}>
+            Share your progress for today. What did you do for this challenge?
           </Typography>
           <TextField
             multiline
@@ -842,10 +830,7 @@ function HomePage() {
           )}
 
           {!allUsersLoading && allUsersError && (
-            <Typography
-              variant="body2"
-              sx={{ color: "#EF4444", mt: 1 }}
-            >
+            <Typography variant="body2" sx={{ color: "#EF4444", mt: 1 }}>
               {allUsersError}
             </Typography>
           )}
@@ -872,11 +857,7 @@ function HomePage() {
                     py: 1,
                   }}
                 >
-                  <Stack
-                    direction="row"
-                    spacing={1}
-                    alignItems="center"
-                  >
+                  <Stack direction="row" spacing={1} alignItems="center">
                     <Avatar
                       sx={{
                         width: 32,
@@ -887,9 +868,7 @@ function HomePage() {
                     >
                       {(u.name || "A")[0]}
                     </Avatar>
-                    <Typography variant="body2">
-                      {u.name}
-                    </Typography>
+                    <Typography variant="body2">{u.name}</Typography>
                   </Stack>
 
                   <Button
@@ -914,16 +893,11 @@ function HomePage() {
               );
             })}
 
-          {!allUsersLoading &&
-            !allUsersError &&
-            allUsers.length === 0 && (
-              <Typography
-                variant="body2"
-                sx={{ mt: 1, color: "#6B7280" }}
-              >
-                No other users yet.
-              </Typography>
-            )}
+          {!allUsersLoading && !allUsersError && allUsers.length === 0 && (
+            <Typography variant="body2" sx={{ mt: 1, color: "#6B7280" }}>
+              No other users yet.
+            </Typography>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseFriendsDialog}>Close</Button>
