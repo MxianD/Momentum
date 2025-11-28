@@ -5,6 +5,8 @@ const ForumPostSchema = new mongoose.Schema(
     title: { type: String, required: true },
     content: { type: String, required: true },
     hasMedia: { type: Boolean, default: false },
+    // 分类（Forum “知识贴” 用）
+    categories: [{ type: String }],
     // 是否是 life skill “知识贴”
     isKnowledge: { type: Boolean, default: false },
     // 上传的图片地址（单张）

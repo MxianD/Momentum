@@ -34,17 +34,32 @@ const ForumPage = () => {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // comment input keyed by postId
+  // 当前登录用户（从 localStorage 拿）
+  const [currentUser, setCurrentUser] = useState(null);
+
+  // comment 输入框（按 postId 存）
   const [commentTexts, setCommentTexts] = useState({});
 
-  // dialog state for creating post
+  // 创建帖子弹窗
   const [createOpen, setCreateOpen] = useState(false);
   const [newCategory, setNewCategory] = useState("");
   const [newTitle, setNewTitle] = useState("");
   const [newBody, setNewBody] = useState("");
   const [newImage, setNewImage] = useState(null);
-
   const [errors, setErrors] = useState({});
+
+  // 读取当前用户
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("user");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setCurrentUser(parsed);
+      }
+    } catch (err) {
+      console.error("Failed to parse user from localStorage", err);
+    }
+  }, []);
 
   const fetchPosts = async () => {
     try {
@@ -71,6 +86,11 @@ const ForumPage = () => {
     const text = (commentTexts[postId] || "").trim();
     if (!text) return;
 
+    if (!currentUser?._id) {
+      alert("Please log in first.");
+      return;
+    }
+
     try {
       const res = await fetch(
         `${API_BASE_URL}/forum/posts/${postId}/comments`,
@@ -79,7 +99,10 @@ const ForumPage = () => {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ text }),
+          body: JSON.stringify({
+            text,
+            userId: currentUser._id, // ✅ 后端需要 userId
+          }),
         }
       );
 
@@ -106,13 +129,22 @@ const ForumPage = () => {
   const handleCreatePost = async () => {
     if (!validatePost()) return;
 
+    if (!currentUser?._id) {
+      alert("Please log in first.");
+      return;
+    }
+
     try {
       const formData = new FormData();
-      formData.append("category", newCategory.trim());
+
+      // ✅ 和后端字段对齐
+      formData.append("userId", currentUser._id);
       formData.append("title", newTitle.trim());
-      formData.append("body", newBody.trim());
+      formData.append("content", newBody.trim()); // 后端要 content
+      formData.append("source", "manual");
+      formData.append("categories", newCategory.trim()); // 后端 parseCategories 会处理
       if (newImage) {
-        formData.append("image", newImage);
+        formData.append("media", newImage); // 文件字段名要叫 media
       }
 
       const res = await fetch(`${API_BASE_URL}/forum/posts`, {
@@ -120,8 +152,12 @@ const ForumPage = () => {
         body: formData,
       });
 
+      const data = await res.json();
+
       if (!res.ok) {
-        throw new Error("Failed to create post");
+        console.error("Create post error:", data);
+        alert(data?.error || "Failed to create post");
+        return;
       }
 
       setCreateOpen(false);
@@ -133,14 +169,13 @@ const ForumPage = () => {
       await fetchPosts();
     } catch (err) {
       console.error(err);
+      alert("Unexpected error when creating post");
     }
   };
 
   const handleImageChange = (e) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setNewImage(file);
-    }
+    if (file) setNewImage(file);
   };
 
   const filteredPosts = posts.filter((p) => {
@@ -148,8 +183,10 @@ const ForumPage = () => {
     if (!q) return true;
     return (
       p.title?.toLowerCase().includes(q) ||
-      p.body?.toLowerCase().includes(q) ||
-      p.category?.toLowerCase().includes(q)
+      p.content?.toLowerCase().includes(q) ||
+      (Array.isArray(p.categories)
+        ? p.categories.join(", ").toLowerCase().includes(q)
+        : false)
     );
   });
 
@@ -177,10 +214,10 @@ const ForumPage = () => {
       sx={{
         minHeight: "100vh",
         bgcolor: "#f5f5f5",
-        pb: 9, // bottom nav
+        pb: 9,
       }}
     >
-      {/* 搜索栏 */}
+      {/* 顶部搜索栏 */}
       <Box
         sx={{
           position: "sticky",
@@ -242,7 +279,7 @@ const ForumPage = () => {
               elevation={1}
             >
               <Box sx={{ p: 2 }}>
-                {/* 用户 & 标题 */}
+                {/* 用户信息 + 分类 */}
                 <Stack direction="row" spacing={1.5} alignItems="center">
                   <Avatar sx={{ bgcolor: "#5f8c2f" }}>
                     {getInitials(post.authorName || post.userName)}
@@ -255,7 +292,9 @@ const ForumPage = () => {
                       variant="caption"
                       sx={{ color: "text.secondary" }}
                     >
-                      {post.category || "Uncategorized"}
+                      {Array.isArray(post.categories) && post.categories.length
+                        ? post.categories.join(", ")
+                        : "Uncategorized"}
                     </Typography>
                   </Box>
                 </Stack>
@@ -266,7 +305,7 @@ const ForumPage = () => {
                     variant="body2"
                     sx={{ mt: 0.5, whiteSpace: "pre-line" }}
                   >
-                    {post.body}
+                    {post.content}
                   </Typography>
                 </Box>
 
@@ -286,7 +325,7 @@ const ForumPage = () => {
                   </Box>
                 )}
 
-                {/* 操作栏 */}
+                {/* 操作栏：赞 / 评论数 / 收藏 */}
                 <Stack
                   direction="row"
                   spacing={2}
@@ -297,7 +336,7 @@ const ForumPage = () => {
                     <ThumbUpOffAltIcon fontSize="small" />
                   </IconButton>
                   <Typography variant="body2">
-                    {post.likeCount ?? post.likes ?? 0}
+                    {post.upvotes ?? 0}
                   </Typography>
 
                   <Stack direction="row" alignItems="center" spacing={0.5}>
@@ -316,11 +355,11 @@ const ForumPage = () => {
               {/* 评论区 */}
               <Divider />
               <Box sx={{ p: 2, pt: 1.5 }}>
-                {/* 已有评论 */}
+                {/* 已有评论（用户名要显示） */}
                 <Stack spacing={1} sx={{ mb: 1.5 }}>
                   {post.comments?.map((c) => (
                     <Typography
-                      key={c._id}
+                      key={c.id || c._id}
                       variant="body2"
                       sx={{ fontSize: 13 }}
                     >
@@ -329,7 +368,7 @@ const ForumPage = () => {
                   ))}
                 </Stack>
 
-                {/* 输入框 */}
+                {/* 评论输入框 */}
                 <Box
                   sx={{
                     display: "flex",
@@ -362,13 +401,13 @@ const ForumPage = () => {
         </Stack>
       </Box>
 
-      {/* 右下角发布帖子按钮 */}
+      {/* 右下角绿色 + 按钮 */}
       <Fab
         color="primary"
         sx={{
           position: "fixed",
           right: 24,
-          bottom: 90, // 上面留出 BottomNavBar 的空间
+          bottom: 90, // 腾出 BottomNavBar 空间
           bgcolor: "#5f8c2f",
           "&:hover": { bgcolor: "#4d7226" },
         }}
