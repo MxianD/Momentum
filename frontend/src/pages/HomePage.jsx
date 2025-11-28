@@ -163,6 +163,7 @@ function HomePage() {
 
   const [activeGoalId, setActiveGoalId] = useState(null);
   const [checkInNote, setCheckInNote] = useState("");
+  const [checkInImage, setCheckInImage] = useState(null); // ✅ 打卡图片
   const [posting, setPosting] = useState(false);
 
   // 排行榜相关
@@ -381,12 +382,14 @@ function HomePage() {
     if (!goal || goal.checkedInToday) return;
     setActiveGoalId(id);
     setCheckInNote("");
+    setCheckInImage(null);
   };
 
   const handleCloseDialog = () => {
     if (posting) return;
     setActiveGoalId(null);
     setCheckInNote("");
+    setCheckInImage(null);
   };
 
   // Check in：对系统 goal，用 /forum/posts 发“checkin”帖；对 challenge goal，调用 /challenges/:id/checkin
@@ -399,18 +402,26 @@ function HomePage() {
       setPosting(true);
 
       if (!goal.isSystem) {
+        // ✅ 挑战打卡：multipart/form-data + image
         if (!userId || !goal.challengeId) {
           alert("User or challenge missing.");
           setPosting(false);
           return;
         }
 
+        const formData = new FormData();
+        formData.append("userId", userId);
+        formData.append("note", checkInNote.trim());
+        if (checkInImage) {
+          // backend: upload.single("image")
+          formData.append("image", checkInImage);
+        }
+
         const res = await fetch(
           `${API_BASE_URL}/challenges/${goal.challengeId}/checkin`,
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ userId, note: checkInNote }),
+            body: formData,
           }
         );
 
@@ -436,17 +447,30 @@ function HomePage() {
           })
         );
       } else {
-        // 系统 goal：发一条 check-in 帖子
+        // ✅ 系统 goal：发一条 check-in 帖子（也支持图片）
+        if (!userId) {
+          alert("User missing.");
+          setPosting(false);
+          return;
+        }
+
+        const formData = new FormData();
+        formData.append("title", goal.title);
+        formData.append("content", checkInNote.trim());
+        formData.append("userId", userId);
+        formData.append("source", "checkin");
+
+        if (checkInImage) {
+          formData.append("hasMedia", "true");
+          // backend forumRoutes: upload.single("media")
+          formData.append("media", checkInImage);
+        } else {
+          formData.append("hasMedia", "false");
+        }
+
         await fetch(`${API_BASE_URL}/forum/posts`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: goal.title,
-            content: checkInNote,
-            hasMedia: false,
-            userId,
-            source: "checkin",
-          }),
+          body: formData,
         });
 
         setGoals((prev) =>
@@ -532,7 +556,7 @@ function HomePage() {
             <Box
               sx={{
                 mt: 0.5,
-                borderRadius: 999,
+                borderRadius: 2,
                 bgcolor: "rgba(0,0,0,0.15)",
                 p: 1,
               }}
@@ -793,6 +817,34 @@ function HomePage() {
             value={checkInNote}
             onChange={(e) => setCheckInNote(e.target.value)}
           />
+
+          {/* ✅ 上传图片 */}
+          <Box sx={{ mt: 2 }}>
+            <Button
+              variant="outlined"
+              component="label"
+              sx={{ textTransform: "none", borderRadius: 999 }}
+            >
+              {checkInImage ? "Change image" : "Upload image"}
+              <input
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={(e) => {
+                  const file = e.target.files?.[0] || null;
+                  setCheckInImage(file);
+                }}
+              />
+            </Button>
+            {checkInImage && (
+              <Typography
+                variant="caption"
+                sx={{ ml: 1, color: "#6B7280" }}
+              >
+                {checkInImage.name}
+              </Typography>
+            )}
+          </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseDialog} disabled={posting}>
