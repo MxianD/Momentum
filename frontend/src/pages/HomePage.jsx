@@ -163,7 +163,8 @@ function GoalCard({
 }
 
 function HomePage() {
-  const [goals, setGoals] = useState(systemGoals);
+  // 去掉系统内置 goal，初始为空，完全依赖用户加入的 challenge
+  const [goals, setGoals] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
 
   const [activeGoalId, setActiveGoalId] = useState(null);
@@ -222,16 +223,14 @@ function HomePage() {
           title: uc.challenge.title,
           subtitle: "Challenge with your friends",
           streak: uc.streak,
-          progressText: "4/7",
+          progressText: "4/7", // 这里可以以后改成真实进度
           checkedInToday: uc.checkedInToday,
           lastNote: uc.lastNote,
           isSystem: false,
         }));
 
-        setGoals((prev) => {
-          const system = prev.filter((g) => g.isSystem);
-          return [...system, ...challengeGoals];
-        });
+        // 现在不再保留系统 goals，直接用 challengeGoals 覆盖
+        setGoals(challengeGoals);
       } catch (err) {
         console.error("Error loading joined challenges", err);
       }
@@ -314,8 +313,8 @@ function HomePage() {
       setAllUsersLoading(true);
       setAllUsersError("");
 
-      // ⚠️ 这里假设有 GET /api/users 返回所有用户
-      const res = await fetch(`${API_BASE_URL}/all`);
+      // GET /api/users/all
+      const res = await fetch(`${API_BASE_URL}/users/all`);
       const data = await res.json().catch(() => []);
 
       if (!res.ok) {
@@ -345,9 +344,9 @@ function HomePage() {
 
     try {
       setAddingId(targetId);
-      // ⚠️ 这里假设有 POST /api/users/:userId/friends/add  body:{friendId}
+      // POST /api/users/:userId/friends  body:{friendId}
       const res = await fetch(
-        `${API_BASE_URL}/users/${userId}/friends/add`,
+        `${API_BASE_URL}/users/${userId}/friends`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -399,7 +398,8 @@ function HomePage() {
     setCheckInNote("");
   };
 
-  // Check in：对系统 goal，用 /forum/posts 发“checkin”帖；对 challenge goal，调用 /challenges/:id/checkin
+  // Check in：对于 challenge goal，调用 /challenges/:id/checkin
+  // （系统 goal 分支保留，但现在不会用到）
   const handleConfirmCheckIn = async () => {
     if (!activeGoalId || !checkInNote.trim()) return;
     const goal = goals.find((g) => g.id === activeGoalId);
@@ -445,7 +445,7 @@ function HomePage() {
           })
         );
       } else {
-        // 系统 goal：发一条 check-in 帖子
+        // 如果以后想再加系统 goal，可以使用这一段逻辑
         await fetch(`${API_BASE_URL}/forum/posts`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -791,6 +791,15 @@ function HomePage() {
             onCheckIn={() => handleOpenCheckInDialog(g.id)}
           />
         ))}
+
+        {goals.length === 0 && (
+          <Typography
+            variant="body2"
+            sx={{ mt: 1, color: "#6B7280" }}
+          >
+            You haven&apos;t joined any challenges yet.
+          </Typography>
+        )}
       </Box>
 
       {/* 打卡弹窗 */}
