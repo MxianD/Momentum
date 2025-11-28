@@ -18,6 +18,7 @@ import {
 import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import FlashOnIcon from "@mui/icons-material/FlashOn";
+import GroupAddIcon from "@mui/icons-material/GroupAdd";
 
 import BottomNavBar from "../components/BottomNavBar.jsx";
 
@@ -188,6 +189,12 @@ function HomePage() {
   const [rankingError, setRankingError] = useState("");
   const [showCount, setShowCount] = useState(5); // 显示前 N 名
 
+  // 好友相关
+  const [friends, setFriends] = useState([]);
+  const [friendsLoading, setFriendsLoading] = useState(false);
+  const [friendsError, setFriendsError] = useState("");
+  const [addingFriends, setAddingFriends] = useState(false);
+
   const activeGoal = goals.find((g) => g.id === activeGoalId) || null;
 
   useEffect(() => {
@@ -201,7 +208,7 @@ function HomePage() {
 
   const userId = currentUser?._id;
 
-  // 从后端拉取用户加入的挑战 -> 转成 goals
+  // 拉取用户加入的挑战 -> 转成 goals
   useEffect(() => {
     if (!userId) return;
 
@@ -265,6 +272,73 @@ function HomePage() {
       fetchRanking();
     }
   }, [userId]);
+
+  // 加载好友列表
+  useEffect(() => {
+    if (!userId) return;
+
+    const loadFriends = async () => {
+      try {
+        setFriendsLoading(true);
+        setFriendsError("");
+        const res = await fetch(`${API_BASE_URL}/users/${userId}/friends`);
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          console.error("Failed to fetch friends:", data);
+          setFriendsError("Failed to load friends.");
+          setFriends([]);
+          return;
+        }
+
+        const list = Array.isArray(data.friends)
+          ? data.friends
+          : Array.isArray(data)
+          ? data
+          : [];
+        setFriends(list);
+      } catch (err) {
+        console.error("Error loading friends:", err);
+        setFriendsError("Failed to load friends.");
+      } finally {
+        setFriendsLoading(false);
+      }
+    };
+
+    loadFriends();
+  }, [userId]);
+
+  const handleAddAllFriends = async () => {
+    if (!userId) return;
+    try {
+      setAddingFriends(true);
+      const res = await fetch(
+        `${API_BASE_URL}/users/${userId}/friends/add-all`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        console.error("Failed to add friends:", data);
+        alert("Failed to add friends.");
+      } else {
+        // 成功后重新拉一次朋友列表
+        const list = Array.isArray(data.friends)
+          ? data.friends
+          : Array.isArray(data)
+          ? data
+          : [];
+        setFriends(list);
+      }
+    } catch (err) {
+      console.error("Error adding friends:", err);
+      alert("Network error when adding friends.");
+    } finally {
+      setAddingFriends(false);
+    }
+  };
 
   const handleOpenCheckInDialog = (id) => {
     const goal = goals.find((g) => g.id === id);
@@ -365,6 +439,8 @@ function HomePage() {
 
   const displayName = currentUser?.name || "Amy";
 
+  const friendsCount = friends.length;
+
   return (
     <Box
       sx={{
@@ -373,7 +449,7 @@ function HomePage() {
         flexDirection: "column",
       }}
     >
-      {/* 顶部绿色区域 + 总排行 */}
+      {/* 顶部绿色区域 + 总排行 + Add friends */}
       <Box
         sx={{
           bgcolor: "#516E1F",
@@ -397,6 +473,7 @@ function HomePage() {
           Hello, {displayName}!
         </Typography>
 
+        {/* 排名标题 */}
         <Typography
           variant="body2"
           sx={{ fontWeight: 600, mb: 0.5 }}
@@ -426,6 +503,7 @@ function HomePage() {
               </Typography>
             )}
 
+            {/* 排名条 */}
             <Box
               sx={{
                 mt: 0.5,
@@ -565,6 +643,71 @@ function HomePage() {
             )}
           </>
         )}
+
+        {/* Add friends 区块 */}
+        <Box
+          sx={{
+            mt: 2,
+            p: 1.1,
+            borderRadius: 999,
+            bgcolor: "rgba(0,0,0,0.18)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 1.5,
+          }}
+        >
+          <Stack direction="row" spacing={1} alignItems="center">
+            <GroupAddIcon sx={{ fontSize: 18, color: "#E5F2C0" }} />
+            <Box>
+              <Typography
+                variant="caption"
+                sx={{ color: "#E5E7EB", display: "block" }}
+              >
+                Friends
+              </Typography>
+              <Typography
+                variant="caption"
+                sx={{ color: "#F9FAFB", fontWeight: 600 }}
+              >
+                {friendsLoading
+                  ? "Loading..."
+                  : friendsCount > 0
+                  ? `${friendsCount} friends`
+                  : "No friends yet"}
+              </Typography>
+              {friendsError && (
+                <Typography
+                  variant="caption"
+                  sx={{ color: "#FCA5A5", display: "block" }}
+                >
+                  {friendsError}
+                </Typography>
+              )}
+            </Box>
+          </Stack>
+
+          <Button
+            size="small"
+            onClick={handleAddAllFriends}
+            disabled={addingFriends}
+            sx={{
+              textTransform: "none",
+              borderRadius: 999,
+              px: 1.8,
+              py: 0.3,
+              fontSize: 11,
+              fontWeight: 600,
+              bgcolor: "#F9FAFB",
+              color: "#111827",
+              "&:hover": {
+                bgcolor: "#E5E7EB",
+              },
+            }}
+          >
+            {addingFriends ? "Adding..." : "Add all friends"}
+          </Button>
+        </Box>
       </Box>
 
       {/* 中间白色内容区域：goals */}
