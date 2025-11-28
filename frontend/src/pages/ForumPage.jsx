@@ -2,25 +2,23 @@
 import React, { useEffect, useState } from "react";
 import {
   Box,
-  Paper,
   Typography,
+  Paper,
   Stack,
   Avatar,
-  IconButton,
   TextField,
-  Button,
+  IconButton,
+  Divider,
+  Chip,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
+  Button,
+  CircularProgress,
   Fab,
-  Divider,
 } from "@mui/material";
 
-import SearchIcon from "@mui/icons-material/Search";
-import ThumbUpOffAltIcon from "@mui/icons-material/ThumbUpOffAlt";
-import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
-import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";
 import SendIcon from "@mui/icons-material/Send";
 import AddIcon from "@mui/icons-material/Add";
 
@@ -28,123 +26,132 @@ import BottomNavBar from "../components/BottomNavBar.jsx";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
+const API_ORIGIN = API_BASE_URL.replace(/\/api$/, "");
 
-const ForumPage = () => {
-  const [posts, setPosts] = useState([]);
-  const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(false);
+/** 把 categories 转成字符串数组，方便展示 chip */
+function extractCategoryTags(post) {
+  const c = post.categories;
+  if (!c) return [];
+  if (Array.isArray(c)) return c;
+  if (typeof c === "string") {
+    return c
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
 
-  // 当前登录用户（从 localStorage 拿）
+/** 把用户输入的 category 文本解析成数组 */
+function parseCategoryInput(input) {
+  return (input || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function ForumPage() {
   const [currentUser, setCurrentUser] = useState(null);
+  const [posts, setPosts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  // comment 输入框（按 postId 存）
-  const [commentTexts, setCommentTexts] = useState({});
+  // 评论草稿：postId -> 文本
+  const [commentDrafts, setCommentDrafts] = useState({});
 
-  // 创建帖子弹窗
-  const [createOpen, setCreateOpen] = useState(false);
-  const [newCategory, setNewCategory] = useState("");
+  // 新帖子弹窗
+  const [postDialogOpen, setPostDialogOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newBody, setNewBody] = useState("");
-  const [newImage, setNewImage] = useState(null);
-  const [errors, setErrors] = useState({});
+  const [newCategoriesInput, setNewCategoriesInput] = useState(""); // 用户输入的 category 文本
+  const [newImageFile, setNewImageFile] = useState(null);
+  const [creatingPost, setCreatingPost] = useState(false);
+  const [formError, setFormError] = useState("");
 
-  // 读取当前用户
+  // 读当前用户
   useEffect(() => {
     try {
-      const stored = localStorage.getItem("user");
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        setCurrentUser(parsed);
-      }
-    } catch (err) {
-      console.error("Failed to parse user from localStorage", err);
+      const saved = localStorage.getItem("momentumUser");
+      if (saved) setCurrentUser(JSON.parse(saved));
+    } catch (e) {
+      console.error("Failed to parse user from localStorage", e);
     }
   }, []);
 
-  const fetchPosts = async () => {
-    try {
-      setLoading(true);
-      const res = await fetch(`${API_BASE_URL}/forum/posts`);
-      const data = await res.json();
-      setPosts(data || []);
-    } catch (err) {
-      console.error("Failed to fetch forum posts", err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const userId = currentUser?._id;
 
+  // 加载所有 forum posts
   useEffect(() => {
-    fetchPosts();
-  }, []);
+    const loadPosts = async () => {
+      try {
+        setLoading(true);
+        setError("");
+        const res = await fetch(`${API_BASE_URL}/forum/posts`);
+        const data = await res.json().catch(() => []);
 
-  const handleCommentChange = (postId, value) => {
-    setCommentTexts((prev) => ({ ...prev, [postId]: value }));
-  };
-
-  const handleSubmitComment = async (postId) => {
-    const text = (commentTexts[postId] || "").trim();
-    if (!text) return;
-
-    if (!currentUser?._id) {
-      alert("Please log in first.");
-      return;
-    }
-
-    try {
-      const res = await fetch(
-        `${API_BASE_URL}/forum/posts/${postId}/comments`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            text,
-            userId: currentUser._id, // ✅ 后端需要 userId
-          }),
+        if (!res.ok) {
+          console.error("Failed to fetch forum posts:", data);
+          throw new Error("Request failed");
         }
-      );
 
-      if (!res.ok) {
-        throw new Error("Failed to submit comment");
+        setPosts(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error("Error loading forum posts:", err);
+        setError("Failed to load posts.");
+      } finally {
+        setLoading(false);
       }
+    };
 
-      setCommentTexts((prev) => ({ ...prev, [postId]: "" }));
-      await fetchPosts();
-    } catch (err) {
-      console.error(err);
+    loadPosts();
+  }, []);
+
+  /** 打开发帖弹窗 */
+  const handleOpenPostDialog = () => {
+    if (!userId) {
+      alert("Please login first.");
+      return;
     }
+    setFormError("");
+    setNewTitle("");
+    setNewBody("");
+    setNewCategoriesInput("");
+    setNewImageFile(null);
+    setPostDialogOpen(true);
   };
 
-  const validatePost = () => {
-    const newErrors = {};
-    if (!newCategory.trim()) newErrors.category = "Category is required";
-    if (!newTitle.trim()) newErrors.title = "Title is required";
-    if (!newBody.trim()) newErrors.body = "Post body is required";
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+  const handleClosePostDialog = () => {
+    if (creatingPost) return;
+    setPostDialogOpen(false);
   };
 
+  /** 提交新帖子 */
   const handleCreatePost = async () => {
-    if (!validatePost()) return;
+    if (!userId) {
+      setFormError("Please login first.");
+      return;
+    }
 
-    if (!currentUser?._id) {
-      alert("Please log in first.");
+    const cats = parseCategoryInput(newCategoriesInput);
+
+    if (!newTitle.trim() || !newBody.trim() || cats.length === 0) {
+      setFormError("Category, title and body are required.");
       return;
     }
 
     try {
-      const formData = new FormData();
+      setCreatingPost(true);
+      setFormError("");
 
-      // ✅ 和后端字段对齐
-      formData.append("userId", currentUser._id);
+      const formData = new FormData();
       formData.append("title", newTitle.trim());
-      formData.append("content", newBody.trim()); // 后端要 content
-      formData.append("source", "manual");
-      formData.append("categories", newCategory.trim()); // 后端 parseCategories 会处理
-      if (newImage) {
-        formData.append("media", newImage); // 文件字段名要叫 media
+      formData.append("content", newBody.trim());
+      formData.append("userId", userId);
+      formData.append("source", "manual"); // forum 知识贴
+      formData.append("categories", JSON.stringify(cats));
+      if (newImageFile) {
+        // backend forumRoutes: upload.single("media")
+        formData.append("media", newImageFile);
       }
 
       const res = await fetch(`${API_BASE_URL}/forum/posts`, {
@@ -152,336 +159,486 @@ const ForumPage = () => {
         body: formData,
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
-      if (!res.ok) {
-        console.error("Create post error:", data);
-        alert(data?.error || "Failed to create post");
+      if (!res.ok || !data.success) {
+        console.error("Failed to create post:", data);
+        setFormError(data.error || "Failed to create post.");
+        setCreatingPost(false);
         return;
       }
 
-      setCreateOpen(false);
-      setNewCategory("");
-      setNewTitle("");
-      setNewBody("");
-      setNewImage(null);
-      setErrors({});
-      await fetchPosts();
+      const created = data.post;
+      if (created) {
+        // 新帖子插到列表顶部
+        setPosts((prev) => [created, ...prev]);
+      }
+
+      setCreatingPost(false);
+      setPostDialogOpen(false);
     } catch (err) {
-      console.error(err);
-      alert("Unexpected error when creating post");
+      console.error("Error creating post:", err);
+      setFormError("Network error, please try again.");
+      setCreatingPost(false);
     }
   };
 
-  const handleImageChange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) setNewImage(file);
+  /** 评论输入变化 */
+  const handleCommentChange = (postId, value) => {
+    setCommentDrafts((prev) => ({ ...prev, [postId]: value }));
   };
 
-  const filteredPosts = posts.filter((p) => {
-    const q = search.toLowerCase();
-    if (!q) return true;
-    return (
-      p.title?.toLowerCase().includes(q) ||
-      p.content?.toLowerCase().includes(q) ||
-      (Array.isArray(p.categories)
-        ? p.categories.join(", ").toLowerCase().includes(q)
-        : false)
-    );
-  });
+  /** 提交评论 */
+  const handleSubmitComment = async (postId) => {
+    const text = (commentDrafts[postId] || "").trim();
+    if (!text || !userId) return;
 
-  const getInitials = (name) => {
-    if (!name) return "?";
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase();
-  };
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/forum/posts/${postId}/comments`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId, text }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        console.error("Failed to send comment:", data);
+        alert("Failed to send comment.");
+        return;
+      }
 
-  const getCommenterName = (comment) => {
-    return (
-      comment.userName ||
-      comment.username ||
-      comment.user?.name ||
-      comment.user?.username ||
-      "Anonymous"
-    );
+      const updatedPost = data.post;
+      if (updatedPost) {
+        setPosts((prev) =>
+          prev.map((p) => (p._id === updatedPost._id ? updatedPost : p))
+        );
+      }
+      setCommentDrafts((prev) => ({ ...prev, [postId]: "" }));
+    } catch (err) {
+      console.error("Error sending comment:", err);
+      alert("Network error. Please try again.");
+    }
   };
 
   return (
     <Box
       sx={{
         minHeight: "100vh",
-        bgcolor: "#f5f5f5",
-        pb: 9,
+        bgcolor: "#F2F2F2",
+        display: "flex",
+        flexDirection: "column",
+        position: "relative",
       }}
     >
-      {/* 顶部搜索栏 */}
+      {/* 顶部绿色标题条 */}
       <Box
         sx={{
-          position: "sticky",
-          top: 0,
-          zIndex: 10,
-          bgcolor: "#f5f5f5",
-          px: 2,
-          pt: 2,
-          pb: 1,
+          bgcolor: "#516E1F",
+          color: "#FFFFFF",
+          px: { xs: 2, md: 4 },
+          pt: { xs: 3, md: 4 },
+          pb: { xs: 2, md: 3 },
+          borderBottomLeftRadius: { xs: 24, md: 32 },
+          borderBottomRightRadius: { xs: 24, md: 32 },
+          boxShadow: "0 12px 25px rgba(0,0,0,0.25)",
         }}
       >
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            bgcolor: "#5f8c2f",
-            borderRadius: "999px",
-            px: 2,
-            py: 1,
-          }}
+        <Typography
+          variant="h6"
+          sx={{ fontWeight: 700, fontSize: 22, mb: 0.5 }}
         >
-          <SearchIcon sx={{ color: "white", mr: 1 }} />
-          <TextField
-            variant="standard"
-            placeholder="Search for the post..."
-            InputProps={{
-              disableUnderline: true,
-              sx: { color: "white" },
-            }}
-            fullWidth
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </Box>
+          Forum
+        </Typography>
+        <Typography
+          variant="body2"
+          sx={{ color: "rgba(255,255,255,0.85)", fontSize: 13 }}
+        >
+          Share tips, ideas, and updates with everyone
+        </Typography>
       </Box>
 
-      {/* 帖子列表 */}
-      <Box sx={{ px: 2, pb: 2 }}>
+      {/* 内容区域：帖子列表 */}
+      <Box
+        sx={{
+          flexGrow: 1,
+          px: { xs: 2, md: 4 },
+          pt: 2,
+          pb: 8,
+        }}
+      >
         {loading && (
           <Typography variant="body2" sx={{ mt: 2 }}>
             Loading posts...
           </Typography>
         )}
 
-        {!loading && filteredPosts.length === 0 && (
-          <Typography variant="body2" sx={{ mt: 2 }}>
-            No posts yet.
+        {!loading && error && (
+          <Typography variant="body2" sx={{ mt: 2, color: "#EF4444" }}>
+            {error}
           </Typography>
         )}
 
-        <Stack spacing={2}>
-          {filteredPosts.map((post) => (
-            <Paper
-              key={post._id}
-              sx={{
-                borderRadius: 3,
-                overflow: "hidden",
-              }}
-              elevation={1}
-            >
-              <Box sx={{ p: 2 }}>
-                {/* 用户信息 + 分类 */}
-                <Stack direction="row" spacing={1.5} alignItems="center">
-                  <Avatar sx={{ bgcolor: "#5f8c2f" }}>
-                    {getInitials(post.authorName || post.userName)}
-                  </Avatar>
-                  <Box>
-                    <Typography fontWeight={600}>
-                      {post.authorName || post.userName || "User"}
-                    </Typography>
-                    <Typography
-                      variant="caption"
-                      sx={{ color: "text.secondary" }}
-                    >
-                      {Array.isArray(post.categories) && post.categories.length
-                        ? post.categories.join(", ")
-                        : "Uncategorized"}
-                    </Typography>
-                  </Box>
-                </Stack>
+        {!loading && !error && posts.length === 0 && (
+          <Typography variant="body2" sx={{ mt: 2, color: "#6B7280" }}>
+            No posts yet. Tap the + button to share something!
+          </Typography>
+        )}
 
-                <Box sx={{ mt: 1.5 }}>
-                  <Typography fontWeight={600}>{post.title}</Typography>
-                  <Typography
-                    variant="body2"
-                    sx={{ mt: 0.5, whiteSpace: "pre-line" }}
-                  >
-                    {post.content}
-                  </Typography>
-                </Box>
+        {!loading &&
+          !error &&
+          posts.map((p) => {
+            const postId = p._id;
+            const d = p.createdAt ? new Date(p.createdAt) : null;
+            const timeLabel = d
+              ? d.toLocaleString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })
+              : "";
+            const authorName =
+              p.authorName ||
+              (typeof p.author === "object" && p.author?.name) ||
+              "Anonymous";
 
-                {post.imageUrl && (
-                  <Box
-                    sx={{
-                      mt: 1.5,
-                      borderRadius: 2,
-                      overflow: "hidden",
-                    }}
-                  >
-                    {/* eslint-disable-next-line jsx-a11y/alt-text */}
-                    <img
-                      src={post.imageUrl}
-                      style={{ width: "100%", display: "block" }}
-                    />
-                  </Box>
-                )}
+            const mediaSrc = p.imageUrl
+              ? p.imageUrl.startsWith("http")
+                ? p.imageUrl
+                : `${API_ORIGIN}${p.imageUrl}`
+              : null;
 
-                {/* 操作栏：赞 / 评论数 / 收藏 */}
-                <Stack
-                  direction="row"
-                  spacing={2}
-                  alignItems="center"
-                  sx={{ mt: 1.5 }}
-                >
-                  <IconButton size="small">
-                    <ThumbUpOffAltIcon fontSize="small" />
-                  </IconButton>
-                  <Typography variant="body2">
-                    {post.upvotes ?? 0}
-                  </Typography>
+            const tags = extractCategoryTags(p);
+            const comments = (p.comments || []).map((c) => ({
+              id: c.id,
+              authorName: c.userName || "Anonymous",
+              text: c.text,
+            }));
 
-                  <Stack direction="row" alignItems="center" spacing={0.5}>
-                    <ChatBubbleOutlineIcon fontSize="small" />
-                    <Typography variant="body2">
-                      {post.comments?.length ?? 0}
-                    </Typography>
-                  </Stack>
+            const commentValue = commentDrafts[postId] || "";
 
-                  <IconButton size="small" sx={{ marginLeft: "auto" }}>
-                    <BookmarkBorderIcon fontSize="small" />
-                  </IconButton>
-                </Stack>
-              </Box>
-
-              {/* 评论区 */}
-              <Divider />
-              <Box sx={{ p: 2, pt: 1.5 }}>
-                {/* 已有评论（用户名要显示） */}
-                <Stack spacing={1} sx={{ mb: 1.5 }}>
-                  {post.comments?.map((c) => (
-                    <Typography
-                      key={c.id || c._id}
-                      variant="body2"
-                      sx={{ fontSize: 13 }}
-                    >
-                      <strong>{getCommenterName(c)}</strong>: {c.text}
-                    </Typography>
-                  ))}
-                </Stack>
-
-                {/* 评论输入框 */}
+            return (
+              <Paper
+                key={postId}
+                elevation={0}
+                sx={{
+                  mb: 2,
+                  borderRadius: 3,
+                  overflow: "hidden",
+                  bgcolor: "#FFFFFF",
+                  border: "1px solid #E5E7EB",
+                }}
+              >
+                {/* media */}
                 <Box
                   sx={{
+                    height: mediaSrc ? 180 : 80,
+                    bgcolor: "#E5E5E5",
                     display: "flex",
                     alignItems: "center",
-                    borderRadius: "999px",
-                    border: "1px solid #c2d7a0",
-                    px: 1.5,
+                    justifyContent: "center",
+                    overflow: "hidden",
                   }}
                 >
-                  <TextField
-                    variant="standard"
-                    placeholder="Leave a supportive comment..."
-                    InputProps={{ disableUnderline: true }}
-                    fullWidth
-                    value={commentTexts[post._id] || ""}
-                    onChange={(e) =>
-                      handleCommentChange(post._id, e.target.value)
-                    }
-                  />
-                  <IconButton
-                    onClick={() => handleSubmitComment(post._id)}
-                    size="small"
-                  >
-                    <SendIcon fontSize="small" />
-                  </IconButton>
+                  {mediaSrc ? (
+                    <Box
+                      component="img"
+                      src={mediaSrc}
+                      alt="post media"
+                      sx={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                        display: "block",
+                      }}
+                    />
+                  ) : (
+                    <Typography
+                      variant="caption"
+                      sx={{ color: "#9CA3AF" }}
+                    >
+                      No image
+                    </Typography>
+                  )}
                 </Box>
-              </Box>
-            </Paper>
-          ))}
-        </Stack>
+
+                {/* 文本 + 作者 + 分类 tag */}
+                <Box sx={{ px: 2, py: 1.4 }}>
+                  <Stack
+                    direction="row"
+                    justifyContent="space-between"
+                    alignItems="center"
+                    sx={{ mb: 0.5 }}
+                  >
+                    <Box>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontWeight: 700,
+                          color: "#111827",
+                          mb: 0.2,
+                        }}
+                      >
+                        {p.title || "Post"}
+                      </Typography>
+                      {timeLabel && (
+                        <Typography
+                          variant="caption"
+                          sx={{ color: "#9CA3AF" }}
+                        >
+                          {timeLabel}
+                        </Typography>
+                      )}
+                    </Box>
+
+                    <Stack
+                      direction="row"
+                      spacing={1}
+                      alignItems="center"
+                    >
+                      <Typography
+                        variant="caption"
+                        sx={{ color: "#6B7280" }}
+                      >
+                        {authorName}
+                      </Typography>
+                      <Avatar
+                        sx={{
+                          width: 28,
+                          height: 28,
+                          bgcolor: "#111827",
+                          fontSize: 13,
+                        }}
+                      >
+                        {authorName?.[0] || "A"}
+                      </Avatar>
+                    </Stack>
+                  </Stack>
+
+                  {/* 分类标签 */}
+                  {tags.length > 0 && (
+                    <Stack
+                      direction="row"
+                      spacing={0.5}
+                      sx={{ mb: 0.8, flexWrap: "wrap" }}
+                    >
+                      {tags.slice(0, 6).map((tag) => (
+                        <Chip
+                          key={tag}
+                          label={tag}
+                          size="small"
+                          sx={{
+                            bgcolor: "#E5F2C0",
+                            color: "#4B5563",
+                            fontSize: 11,
+                            height: 22,
+                          }}
+                        />
+                      ))}
+                    </Stack>
+                  )}
+
+                  <Typography
+                    variant="body2"
+                    sx={{ color: "#4B5563", mb: 0.8 }}
+                  >
+                    {p.content}
+                  </Typography>
+
+                  {/* 评论输入区 */}
+                  <Box
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      mt: 0.5,
+                    }}
+                  >
+                    <TextField
+                      size="small"
+                      placeholder="Add a comment..."
+                      value={commentValue}
+                      onChange={(e) =>
+                        handleCommentChange(postId, e.target.value)
+                      }
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSubmitComment(postId);
+                        }
+                      }}
+                      fullWidth
+                      InputProps={{
+                        sx: {
+                          borderRadius: 999,
+                          fontSize: 12,
+                          bgcolor: "#FFFFFF",
+                          "& .MuiOutlinedInput-notchedOutline": {
+                            borderColor: "#7E9B3C",
+                          },
+                          pr: 0,
+                        },
+                      }}
+                    />
+                    <IconButton
+                      size="small"
+                      onClick={() => handleSubmitComment(postId)}
+                      sx={{ ml: 0.5 }}
+                    >
+                      <SendIcon sx={{ fontSize: 18, color: "#7E9B3C" }} />
+                    </IconButton>
+                  </Box>
+
+                  {/* 已有评论：显示评论用户名字 */}
+                  {comments.length > 0 && (
+                    <>
+                      <Divider sx={{ my: 1 }} />
+                      <Box>
+                        {comments.map((c) => (
+                          <Box key={c.id} sx={{ mb: 0.4 }}>
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                fontWeight: 600,
+                                color: "#111827",
+                                mr: 0.5,
+                              }}
+                            >
+                              {c.authorName}:
+                            </Typography>
+                            <Typography
+                              variant="caption"
+                              sx={{ color: "#4B5563" }}
+                            >
+                              {c.text}
+                            </Typography>
+                          </Box>
+                        ))}
+                      </Box>
+                    </>
+                  )}
+                </Box>
+              </Paper>
+            );
+          })}
       </Box>
 
-      {/* 右下角绿色 + 按钮 */}
+      {/* 右下角绿色圆形 + 按钮 */}
       <Fab
-        color="primary"
+        onClick={handleOpenPostDialog}
         sx={{
           position: "fixed",
           right: 24,
-          bottom: 90, // 腾出 BottomNavBar 空间
-          bgcolor: "#5f8c2f",
-          "&:hover": { bgcolor: "#4d7226" },
+          bottom: 80, // 避开 BottomNavBar
+          bgcolor: "#7E9B3C",
+          color: "#FFFFFF",
+          "&:hover": {
+            bgcolor: "#647630",
+          },
+          zIndex: 1200,
         }}
-        onClick={() => setCreateOpen(true)}
       >
         <AddIcon />
       </Fab>
 
-      {/* 发布帖子弹窗 */}
+      <BottomNavBar />
+
+      {/* 发布新帖弹窗 */}
       <Dialog
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
+        open={postDialogOpen}
+        onClose={handleClosePostDialog}
         fullWidth
         maxWidth="sm"
       >
-        <DialogTitle>Share your knowledge</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 700 }}>New forum post</DialogTitle>
         <DialogContent dividers>
-          <Box sx={{ mt: 1.5, display: "flex", flexDirection: "column", gap: 2 }}>
-            <TextField
-              label="Category (required)"
-              value={newCategory}
-              onChange={(e) => setNewCategory(e.target.value)}
-              error={!!errors.category}
-              helperText={errors.category}
-              fullWidth
-            />
-            <TextField
-              label="Title (required)"
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              error={!!errors.title}
-              helperText={errors.title}
-              fullWidth
-            />
-            <TextField
-              label="What did you learn or what worked for you? (required)"
-              value={newBody}
-              onChange={(e) => setNewBody(e.target.value)}
-              error={!!errors.body}
-              helperText={errors.body}
-              fullWidth
-              multiline
-              minRows={4}
-            />
+          <Typography
+            variant="body2"
+            sx={{ mb: 1, color: "#6B7280" }}
+          >
+            Category, title and body are required. You can also add an
+            image.
+          </Typography>
 
-            <Box>
-              <Button variant="outlined" component="label">
-                {newImage ? "Change image" : "Upload image"}
-                <input
-                  type="file"
-                  hidden
-                  accept="image/*"
-                  onChange={handleImageChange}
-                />
-              </Button>
-              {newImage && (
-                <Typography variant="caption" sx={{ display: "block", mt: 0.5 }}>
-                  Selected: {newImage.name}
-                </Typography>
-              )}
-            </Box>
+          <TextField
+            label="Categories (comma separated)"
+            fullWidth
+            margin="dense"
+            value={newCategoriesInput}
+            onChange={(e) => setNewCategoriesInput(e.target.value)}
+          />
+
+          <TextField
+            label="Title"
+            fullWidth
+            margin="dense"
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+          />
+
+          <TextField
+            label="Body"
+            fullWidth
+            margin="dense"
+            multiline
+            minRows={3}
+            value={newBody}
+            onChange={(e) => setNewBody(e.target.value)}
+          />
+
+          <Box sx={{ mt: 2 }}>
+            <Button
+              variant="outlined"
+              component="label"
+              sx={{ textTransform: "none", borderRadius: 999 }}
+            >
+              {newImageFile ? "Change image" : "Upload image"}
+              <input
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={(e) => {
+                  const file = e.target.files?.[0] || null;
+                  setNewImageFile(file);
+                }}
+              />
+            </Button>
+            {newImageFile && (
+              <Typography
+                variant="caption"
+                sx={{ ml: 1, color: "#6B7280" }}
+              >
+                {newImageFile.name}
+              </Typography>
+            )}
           </Box>
+
+          {formError && (
+            <Typography
+              variant="body2"
+              sx={{ mt: 1.5, color: "#EF4444" }}
+            >
+              {formError}
+            </Typography>
+          )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setCreateOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={handleCreatePost}>
-            Post
+          <Button onClick={handleClosePostDialog} disabled={creatingPost}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleCreatePost}
+            disabled={creatingPost}
+            sx={{ textTransform: "none", borderRadius: 999 }}
+          >
+            {creatingPost ? "Posting..." : "Post"}
           </Button>
         </DialogActions>
       </Dialog>
-
-      <BottomNavBar />
     </Box>
   );
-};
+}
 
 export default ForumPage;
