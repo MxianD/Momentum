@@ -19,8 +19,8 @@ import meditationImg from "../assets/challenges/meditation.svg";
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
 
-// 推荐挑战（走马灯，系统默认，先写死在前端）
-// ⚠️ 这三个 _id 必须在数据库里真的有对应的 Challenge 记录（_id 一样），
+// 推荐挑战（走马灯，系统默认）
+// ⚠️ 这三个 _id 必须在数据库里真的有对应的 Challenge 记录（_id 一样）,
 //    不然 POST /api/challenges/:id/join 会 404。
 const recommended = [
   {
@@ -131,6 +131,11 @@ function ExplorePage() {
       return;
     }
 
+    // 如果已经加入了，直接不处理
+    if (isJoined(challenge._id)) {
+      return;
+    }
+
     try {
       const res = await fetch(
         `${API_BASE_URL}/challenges/${challenge._id}/join`,
@@ -170,6 +175,9 @@ function ExplorePage() {
       );
       return;
     }
+
+    // 已加入则不再发送请求
+    if (isJoined(challenge._id)) return;
 
     // 直接复用 friend 的逻辑
     await handleJoinFriendChallenge(challenge);
@@ -217,65 +225,89 @@ function ExplorePage() {
             "&::-webkit-scrollbar": { display: "none" },
           }}
         >
-          {recommended.map((item) => (
-            <Paper
-              key={item._id}
-              onClick={() => handleOpenDetail(item)}
-              sx={{
-                flex: "0 0 100%",
-                scrollSnapAlign: "center",
-                p: 2,
-                borderRadius: 3,
-                cursor: "pointer",
-                boxSizing: "border-box",
-              }}
-            >
-              <Stack spacing={1.5}>
-                <Stack
-                  direction="row"
-                  justifyContent="space-between"
-                  alignItems="center"
-                >
-                  <Typography variant="body2" sx={{ fontSize: 13 }}>
-                    {item.leader}
-                  </Typography>
-                  <Avatar sx={{ width: 28, height: 28 }} />
-                </Stack>
-
-                <Stack direction="row" spacing={2} alignItems="center">
-                  <Box sx={{ flex: 1, minWidth: 0 }}>
-                    <Typography
-                      variant="h6"
-                      sx={{
-                        fontWeight: 700,
-                        mb: 0.5,
-                        lineHeight: 1.2,
-                        wordBreak: "break-word",
-                      }}
-                    >
-                      {item.title}
-                    </Typography>
-                    <Typography variant="body2" sx={{ color: "#6B7280" }}>
-                      {item.time}
-                    </Typography>
-                  </Box>
-
+          {recommended.map((item) => {
+            const joined = isJoined(item._id);
+            return (
+              <Paper
+                key={item._id}
+                onClick={() => handleOpenDetail(item)}
+                sx={{
+                  flex: "0 0 100%",
+                  scrollSnapAlign: "center",
+                  p: 2,
+                  borderRadius: 3,
+                  cursor: "pointer",
+                  boxSizing: "border-box",
+                  position: "relative",
+                }}
+              >
+                {/* 如果已加入，可以在卡片右上角给个小 tag（可选） */}
+                {joined && (
                   <Box
-                    component="img"
-                    src={item.image}
-                    alt={item.title}
                     sx={{
-                      width: { xs: "38%", sm: "32%", md: "28%" },
-                      height: "auto",
-                      borderRadius: 3,
-                      flexShrink: 0,
-                      display: "block",
+                      position: "absolute",
+                      top: 8,
+                      right: 8,
+                      bgcolor: "#16A34A",
+                      color: "#FFFFFF",
+                      borderRadius: 12,
+                      px: 1,
+                      py: 0.2,
+                      fontSize: 10,
+                      fontWeight: 600,
                     }}
-                  />
+                  >
+                    Joined
+                  </Box>
+                )}
+
+                <Stack spacing={1.5}>
+                  <Stack
+                    direction="row"
+                    justifyContent="space-between"
+                    alignItems="center"
+                  >
+                    <Typography variant="body2" sx={{ fontSize: 13 }}>
+                      {item.leader}
+                    </Typography>
+                    <Avatar sx={{ width: 28, height: 28 }} />
+                  </Stack>
+
+                  <Stack direction="row" spacing={2} alignItems="center">
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography
+                        variant="h6"
+                        sx={{
+                          fontWeight: 700,
+                          mb: 0.5,
+                          lineHeight: 1.2,
+                          wordBreak: "break-word",
+                        }}
+                      >
+                        {item.title}
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: "#6B7280" }}>
+                        {item.time}
+                      </Typography>
+                    </Box>
+
+                    <Box
+                      component="img"
+                      src={item.image}
+                      alt={item.title}
+                      sx={{
+                        width: { xs: "38%", sm: "32%", md: "28%" },
+                        height: "auto",
+                        borderRadius: 3,
+                        flexShrink: 0,
+                        display: "block",
+                      }}
+                    />
+                  </Stack>
                 </Stack>
-              </Stack>
-            </Paper>
-          ))}
+              </Paper>
+            );
+          })}
         </Box>
 
         {/* 小圆点 */}
@@ -465,6 +497,15 @@ function ExplorePage() {
               }}
             />
           )}
+
+          {selectedChallenge && isJoined(selectedChallenge._id) && (
+            <Typography
+              variant="body2"
+              sx={{ color: "#16A34A", fontWeight: 500 }}
+            >
+              You have already joined this challenge.
+            </Typography>
+          )}
         </DialogContent>
 
         <DialogActions sx={{ px: 3, pb: 2 }}>
@@ -473,16 +514,22 @@ function ExplorePage() {
           <Button
             variant="contained"
             sx={{ textTransform: "none", borderRadius: 999 }}
-            onClick={() => {
+            disabled={
+              !selectedChallenge || isJoined(selectedChallenge._id)
+            }
+            onClick={async () => {
               if (!selectedChallenge) return;
 
-              // 推荐 challenge（走马灯那 3 个）
-              handleJoinRecommendedChallenge(selectedChallenge);
+              const joined = isJoined(selectedChallenge._id);
+              if (joined) return; // 已加入则不再 join
 
+              await handleJoinRecommendedChallenge(selectedChallenge);
               handleCloseDetail();
             }}
           >
-            Join challenge
+            {selectedChallenge && isJoined(selectedChallenge._id)
+              ? "Joined"
+              : "Join challenge"}
           </Button>
         </DialogActions>
       </Dialog>
