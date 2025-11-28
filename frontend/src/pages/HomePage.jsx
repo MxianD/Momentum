@@ -216,9 +216,14 @@ function HomePage() {
           title: uc.challenge.title,
           subtitle: "Challenge with your friends",
           streak: uc.streak,
-          checkedInToday: uc.checkedInToday,
+
+          // ⭐ 修复 checkedInToday：使用后端每日重新计算后的值
+          checkedInToday:
+            typeof uc.checkedInToday === "boolean" ? uc.checkedInToday : false,
+
           lastNote: uc.lastNote,
           isSystem: false,
+
           // 每次打卡加分（6 / 5 / 3）
           pointsPerCheckin: getPointsForChallengeTitle(uc.challenge.title),
         }));
@@ -544,8 +549,8 @@ function HomePage() {
           <>
             {myRank ? (
               <Typography variant="body2" sx={{ mb: 1 }}>
-                You are #{myRank.rank} with{" "}
-                <strong>{myRank.points}</strong> pts.
+                You are #{myRank.rank} with <strong>{myRank.points}</strong>{" "}
+                pts.
               </Typography>
             ) : (
               <Typography variant="body2" sx={{ mb: 1 }}>
@@ -791,9 +796,7 @@ function HomePage() {
             title={g.title}
             subtitle={g.subtitle}
             streak={g.streak}
-            points={
-              g.pointsPerCheckin ?? getPointsForChallengeTitle(g.title)
-            }
+            points={g.pointsPerCheckin ?? getPointsForChallengeTitle(g.title)}
             checkedInToday={g.checkedInToday}
             onCheckIn={() => handleOpenCheckInDialog(g.id)}
           />
@@ -837,10 +840,7 @@ function HomePage() {
               />
             </Button>
             {checkInImage && (
-              <Typography
-                variant="caption"
-                sx={{ ml: 1, color: "#6B7280" }}
-              >
+              <Typography variant="caption" sx={{ ml: 1, color: "#6B7280" }}>
                 {checkInImage.name}
               </Typography>
             )}
