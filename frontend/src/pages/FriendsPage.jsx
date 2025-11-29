@@ -101,6 +101,9 @@ function FriendsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  // 图片加载失败：postId -> true
+  const [imageErrorMap, setImageErrorMap] = useState({});
+
   // 读当前用户
   useEffect(() => {
     try {
@@ -401,11 +404,14 @@ function FriendsPage() {
                     (typeof p.author === "object" && p.author?.name) ||
                     "Anonymous";
 
-                  const mediaSrc = p.imageUrl
+                  const rawMediaSrc = p.imageUrl
                     ? p.imageUrl.startsWith("http")
                       ? p.imageUrl
                       : `${API_ORIGIN}${p.imageUrl}`
                     : null;
+
+                  const hideMedia =
+                    !rawMediaSrc || imageErrorMap[postId] === true;
 
                   const tags = extractCategoryTags(p);
                   const comments = (p.comments || []).map((c) => ({
@@ -428,21 +434,24 @@ function FriendsPage() {
                         border: "1px solid #E5E7EB",
                       }}
                     >
-                      {/* media */}
-                      <Box
-                        sx={{
-                          height: 160,
-                          bgcolor: "#E5E5E5",
-                          ...(mediaSrc && {
-                            p: 0,
-                          }),
-                        }}
-                      >
-                        {mediaSrc && (
+                      {/* 图片：只在有图且没报错时渲染 */}
+                      {!hideMedia && (
+                        <Box
+                          sx={{
+                            height: 160,
+                            bgcolor: "#E5E5E5",
+                          }}
+                        >
                           <Box
                             component="img"
-                            src={mediaSrc}
+                            src={rawMediaSrc}
                             alt="post media"
+                            onError={() =>
+                              setImageErrorMap((prev) => ({
+                                ...prev,
+                                [postId]: true,
+                              }))
+                            }
                             sx={{
                               width: "100%",
                               height: "100%",
@@ -450,8 +459,8 @@ function FriendsPage() {
                               display: "block",
                             }}
                           />
-                        )}
-                      </Box>
+                        </Box>
+                      )}
 
                       {/* 文本 + 作者 + 分类 tag */}
                       <Box sx={{ px: 2, py: 1.4 }}>
@@ -461,29 +470,43 @@ function FriendsPage() {
                           alignItems="center"
                           sx={{ mb: 0.5 }}
                         >
-                          <Stack
-                            direction="row"
-                            spacing={1}
-                            alignItems="center"
-                          >
+                          <Box sx={{ pr: 1 }}>
+                            <Stack
+                              direction="row"
+                              spacing={1}
+                              alignItems="center"
+                            >
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  fontWeight: 600,
+                                  color: "#111827",
+                                }}
+                              >
+                                {p.title || "Check-in"}
+                              </Typography>
+                              {timeLabel && (
+                                <Typography
+                                  variant="caption"
+                                  sx={{ color: "#9CA3AF" }}
+                                >
+                                  {timeLabel}
+                                </Typography>
+                              )}
+                            </Stack>
+
+                            {/* 完整作者姓名 */}
                             <Typography
-                              variant="body2"
+                              variant="caption"
                               sx={{
-                                fontWeight: 600,
-                                color: "#111827",
+                                color: "#6B7280",
+                                display: "block",
+                                mt: 0.2,
                               }}
                             >
-                              {p.title || "Check-in"}
+                              Posted by {authorName}
                             </Typography>
-                            {timeLabel && (
-                              <Typography
-                                variant="caption"
-                                sx={{ color: "#9CA3AF" }}
-                              >
-                                {timeLabel}
-                              </Typography>
-                            )}
-                          </Stack>
+                          </Box>
 
                           <Avatar
                             sx={{
@@ -491,6 +514,7 @@ function FriendsPage() {
                               height: 28,
                               bgcolor: "#111827",
                               fontSize: 13,
+                              flexShrink: 0,
                             }}
                           >
                             {authorName?.[0] || "A"}
