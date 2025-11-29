@@ -76,6 +76,9 @@ function ForumPage() {
   // 帖子点赞/点踩时的“进行中”状态
   const [votingPostId, setVotingPostId] = useState(null);
 
+  // 图片加载错误：postId -> true
+  const [imageErrorMap, setImageErrorMap] = useState({});
+
   // 读当前用户
   useEffect(() => {
     try {
@@ -373,11 +376,13 @@ function ForumPage() {
               (typeof p.author === "object" && p.author?.name) ||
               "Anonymous";
 
-            const mediaSrc = p.imageUrl
+            const rawMediaSrc = p.imageUrl
               ? p.imageUrl.startsWith("http")
                 ? p.imageUrl
                 : `${API_ORIGIN}${p.imageUrl}`
               : null;
+
+            const hideMedia = !rawMediaSrc || imageErrorMap[postId];
 
             const tags = extractCategoryTags(p);
             const comments = (p.comments || []).map((c) => ({
@@ -400,22 +405,28 @@ function ForumPage() {
                   border: "1px solid #E5E7EB",
                 }}
               >
-                {/* media */}
-                <Box
-                  sx={{
-                    height: mediaSrc ? 180 : 80,
-                    bgcolor: "#E5E5E5",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    overflow: "hidden",
-                  }}
-                >
-                  {mediaSrc ? (
+                {/* 只在有图片且没出错时渲染图片区域 */}
+                {!hideMedia && (
+                  <Box
+                    sx={{
+                      height: 180,
+                      bgcolor: "#E5E5E5",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      overflow: "hidden",
+                    }}
+                  >
                     <Box
                       component="img"
-                      src={mediaSrc}
+                      src={rawMediaSrc}
                       alt="post media"
+                      onError={() =>
+                        setImageErrorMap((prev) => ({
+                          ...prev,
+                          [postId]: true,
+                        }))
+                      }
                       sx={{
                         width: "100%",
                         height: "100%",
@@ -423,12 +434,8 @@ function ForumPage() {
                         display: "block",
                       }}
                     />
-                  ) : (
-                    <Typography variant="caption" sx={{ color: "#9CA3AF" }}>
-                      No image
-                    </Typography>
-                  )}
-                </Box>
+                  </Box>
+                )}
 
                 {/* 文本 + 作者 + 分类 tag */}
                 <Box sx={{ px: 2, py: 1.4 }}>
@@ -438,7 +445,7 @@ function ForumPage() {
                     alignItems="center"
                     sx={{ mb: 0.5 }}
                   >
-                    <Box>
+                    <Box sx={{ pr: 1 }}>
                       <Typography
                         variant="body2"
                         sx={{
@@ -450,27 +457,37 @@ function ForumPage() {
                         {p.title || "Post"}
                       </Typography>
                       {timeLabel && (
-                        <Typography variant="caption" sx={{ color: "#9CA3AF" }}>
+                        <Typography
+                          variant="caption"
+                          sx={{ color: "#9CA3AF", display: "block" }}
+                        >
                           {timeLabel}
                         </Typography>
                       )}
-                    </Box>
-
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <Typography variant="caption" sx={{ color: "#6B7280" }}>
-                        {authorName}
-                      </Typography>
-                      <Avatar
+                      {/* 显示完整作者姓名 */}
+                      <Typography
+                        variant="caption"
                         sx={{
-                          width: 28,
-                          height: 28,
-                          bgcolor: "#111827",
-                          fontSize: 13,
+                          color: "#6B7280",
+                          display: "block",
+                          mt: 0.2,
                         }}
                       >
-                        {authorName?.[0] || "A"}
-                      </Avatar>
-                    </Stack>
+                        Posted by {authorName}
+                      </Typography>
+                    </Box>
+
+                    <Avatar
+                      sx={{
+                        width: 28,
+                        height: 28,
+                        bgcolor: "#111827",
+                        fontSize: 13,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {authorName?.[0] || "A"}
+                    </Avatar>
                   </Stack>
 
                   {/* 分类标签 */}
@@ -629,7 +646,9 @@ function ForumPage() {
                               >
                                 <IconButton
                                   size="small"
-                                  onClick={() => handleCommentReact(c.id, "up")}
+                                  onClick={() =>
+                                    handleCommentReact(c.id, "up")
+                                  }
                                 >
                                   <ThumbUpOffAltIcon
                                     sx={{
