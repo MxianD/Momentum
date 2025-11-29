@@ -37,18 +37,14 @@ const upload = multer({
 function parseCategories(raw) {
   if (!raw) return [];
   if (Array.isArray(raw)) {
-    return raw
-      .map((t) => `${t}`.trim())
-      .filter(Boolean);
+    return raw.map((t) => `${t}`.trim()).filter(Boolean);
   }
   if (typeof raw === "string") {
     // 可能是 JSON，也可能是逗号分隔
     try {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        return parsed
-          .map((t) => `${t}`.trim())
-          .filter(Boolean);
+        return parsed.map((t) => `${t}`.trim()).filter(Boolean);
       }
     } catch {
       // 不是 JSON，当成逗号分隔
@@ -115,9 +111,7 @@ router.post("/posts", upload.single("media"), async (req, res) => {
     let { source = "manual", hasMedia } = req.body;
 
     if (!content || !userId) {
-      return res
-        .status(400)
-        .json({ error: "content and userId are required" });
+      return res.status(400).json({ error: "content and userId are required" });
     }
 
     // 规范 source
@@ -213,9 +207,7 @@ router.post("/posts/:id/upvote", async (req, res) => {
     }
 
     const uid = userId.toString();
-    const hasUpvoted = (post.upvotedBy || []).some(
-      (u) => u.toString() === uid
-    );
+    const hasUpvoted = (post.upvotedBy || []).some((u) => u.toString() === uid);
 
     if (hasUpvoted) {
       // 再点一次 -> 取消点赞
@@ -226,9 +218,7 @@ router.post("/posts/:id/upvote", async (req, res) => {
       post.upvotedBy.push(uid);
       // 顺便取消点踩
       if (Array.isArray(post.downvotedBy)) {
-        post.downvotedBy = post.downvotedBy.filter(
-          (u) => u.toString() !== uid
-        );
+        post.downvotedBy = post.downvotedBy.filter((u) => u.toString() !== uid);
       }
     }
 
@@ -276,18 +266,14 @@ router.post("/posts/:id/downvote", async (req, res) => {
 
     if (hasDownvoted) {
       // 已点踩 -> 取消
-      post.downvotedBy = post.downvotedBy.filter(
-        (u) => u.toString() !== uid
-      );
+      post.downvotedBy = post.downvotedBy.filter((u) => u.toString() !== uid);
     } else {
       // 未点踩 -> 添加
       if (!Array.isArray(post.downvotedBy)) post.downvotedBy = [];
       post.downvotedBy.push(uid);
       // 取消点赞
       if (Array.isArray(post.upvotedBy)) {
-        post.upvotedBy = post.upvotedBy.filter(
-          (u) => u.toString() !== uid
-        );
+        post.upvotedBy = post.upvotedBy.filter((u) => u.toString() !== uid);
       }
     }
 
@@ -335,9 +321,7 @@ router.post("/posts/:id/bookmark", async (req, res) => {
 
     if (hasBookmarked) {
       // 已收藏 -> 取消
-      post.bookmarkedBy = post.bookmarkedBy.filter(
-        (u) => u.toString() !== uid
-      );
+      post.bookmarkedBy = post.bookmarkedBy.filter((u) => u.toString() !== uid);
     } else {
       // 未收藏 -> 收藏
       if (!Array.isArray(post.bookmarkedBy)) post.bookmarkedBy = [];
@@ -411,9 +395,7 @@ router.post("/posts/:id/comments", async (req, res) => {
 router.get("/ranking/total", async (req, res) => {
   try {
     // 1. 找出所有帖子 —— 用来统计有分的用户
-    const posts = await ForumPost.find()
-      .populate("author", "name")
-      .exec();
+    const posts = await ForumPost.find().populate("author", "name").exec();
 
     const scoreMap = new Map();
 
@@ -434,11 +416,21 @@ router.get("/ranking/total", async (req, res) => {
 
       let pts = 0;
 
-      if (p.source === "checkin") {
-        const title = p.title?.trim();
-        if (title === "Stay hydrated") pts += 5;
-        else if (title === "Everyday Meditation") pts += 6;
-        else if (title === "Morning Stretch") pts += 3;
+      // ⭐ 在 /ranking/total 里，替换原来的这段：
+
+      if (obj.source === "checkin") {
+        const titleRaw = (obj.title || "").trim().toLowerCase();
+
+        if (titleRaw.startsWith("stay hydrated")) {
+          base += 5;
+        } else if (titleRaw.startsWith("everyday meditation")) {
+          base += 6;
+        } else if (titleRaw.startsWith("morning stretch")) {
+          base += 3;
+        } else {
+          // 其它任意打卡挑战，也给一个基础分（比如 3 分，可以按你喜好调整）
+          base += 3;
+        }
       }
 
       if (p.source === "manual") pts += 5;
@@ -481,7 +473,5 @@ router.get("/ranking/total", async (req, res) => {
     res.status(500).json({ error: "Failed to compute ranking" });
   }
 });
-
-
 
 export default router;
