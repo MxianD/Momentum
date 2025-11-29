@@ -406,75 +406,53 @@ router.post("/posts/:id/comments", async (req, res) => {
 
 /**
  * ⭐ 总积分排名：GET /api/forum/ranking/total
- *
- * 规则：
- * - 每条打卡（source === "checkin"）基础分：
- *    Stay hydrated       +5
- *    Everyday Meditation +6
- *    Morning Stretch     +3
- * - 每条“知识贴”（source === "manual"）  +5
- * - 每个 upvote          +1
- * - “好贴”：upvotes ≥ 5 或 bookmarks ≥ 3 再 +10
- *
- * 返回：[{ userId, name, points, rank }, ...]，包含所有用户
+ * 返回所有用户（包括从未发帖的，points = 0）
  */
 router.get("/ranking/total", async (req, res) => {
   try {
-    // 1. 把所有帖子拿出来做计分
+    // 1. 找出所有帖子 —— 用来统计有分的用户
     const posts = await ForumPost.find()
       .populate("author", "name")
       .exec();
 
-    const scoreMap = new Map(); // authorId -> { userId, name, points }
+    const scoreMap = new Map();
 
-    const addScore = (authorId, authorName, pts) => {
-      if (!authorId || !pts) return;
-      const key = authorId.toString();
-      const existing = scoreMap.get(key) || {
-        userId: key,
-        name: authorName || "Anonymous",
-        points: 0,
-      };
-      existing.points += pts;
-      scoreMap.set(key, existing);
+    const addScore = (id, name, pts) => {
+      if (!id) return;
+      const key = id.toString();
+      const entry = scoreMap.get(key) || { userId: key, name, points: 0 };
+      entry.points += pts;
+      scoreMap.set(key, entry);
     };
 
+    // 2. 根据帖子累计积分
     posts.forEach((p) => {
-      const obj = p.toObject();
-      const authorId = obj.author?._id || obj.author;
-      const authorName = obj.author?.name || "Anonymous";
+      const authorId = p.author?._id || p.author;
+      const authorName = p.author?.name || "Anonymous";
+
       if (!authorId) return;
 
-      let base = 0;
+      let pts = 0;
 
-      // 基础分：checkin
-      if (obj.source === "checkin") {
-        const title = (obj.title || "").trim();
-        if (title === "Stay hydrated") base += 5;
-        else if (title === "Everyday Meditation") base += 6;
-        else if (title === "Morning Stretch") base += 3;
+      if (p.source === "checkin") {
+        const title = p.title?.trim();
+        if (title === "Stay hydrated") pts += 5;
+        else if (title === "Everyday Meditation") pts += 6;
+        else if (title === "Morning Stretch") pts += 3;
       }
 
-      // 基础分：知识贴
-      if (obj.source === "manual") {
-        base += 5;
-      }
+      if (p.source === "manual") pts += 5;
 
-      // upvote 分
-      const likeCount = (obj.upvotedBy || []).length;
-      base += likeCount;
+      pts += (p.upvotedBy || []).length;
 
-      // 好贴奖励
-      const bookmarkCount = (obj.bookmarkedBy || []).length;
-      const isGoodPost = likeCount >= 5 || bookmarkCount >= 3;
-      if (isGoodPost) {
-        base += 10;
-      }
+      const likeCount = (p.upvotedBy || []).length;
+      const bmCount = (p.bookmarkedBy || []).length;
+      if (likeCount >= 5 || bmCount >= 3) pts += 10;
 
-      addScore(authorId, authorName, base);
+      addScore(authorId, authorName, pts);
     });
 
-    // 2. 把所有用户都补进去（没分的就是 0 分）
+    // 3. 把所有用户补进去（没有积分的 = 0）
     const allUsers = await User.find({}, "name").exec();
 
     allUsers.forEach((u) => {
@@ -488,23 +466,22 @@ router.get("/ranking/total", async (req, res) => {
       }
     });
 
-    // 3. 转成数组并排序（积分降序，同分时按名字排一下，避免顺序乱跳）
+    // 4. 排序
     const rankingArray = Array.from(scoreMap.values()).sort((a, b) => {
       if (b.points !== a.points) return b.points - a.points;
       return (a.name || "").localeCompare(b.name || "");
     });
 
-    // 4. 加 rank 字段
-    rankingArray.forEach((item, idx) => {
-      item.rank = idx + 1;
-    });
+    // 5. rank 字段
+    rankingArray.forEach((item, i) => (item.rank = i + 1));
 
     res.json(rankingArray);
   } catch (err) {
-    console.error("Error computing total ranking:", err);
+    console.error("Error computing ranking:", err);
     res.status(500).json({ error: "Failed to compute ranking" });
   }
 });
+
 
 
 export default router;
