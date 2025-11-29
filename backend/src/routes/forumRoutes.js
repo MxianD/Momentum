@@ -4,7 +4,7 @@ import mongoose from "mongoose";
 import multer from "multer";
 import path from "path";
 import ForumPost from "../models/ForumPost.js";
-
+import User from "../models/User.js";
 const router = express.Router();
 
 /**
@@ -407,19 +407,20 @@ router.post("/posts/:id/comments", async (req, res) => {
 /**
  * ⭐ 总积分排名：GET /api/forum/ranking/total
  *
- * 规则（简化版实现）：
+ * 规则：
  * - 每条打卡（source === "checkin"）基础分：
  *    Stay hydrated       +5
  *    Everyday Meditation +6
  *    Morning Stretch     +3
  * - 每条“知识贴”（source === "manual"）  +5
- * - 每个 upvote          +1（忽略每日上限）
+ * - 每个 upvote          +1
  * - “好贴”：upvotes ≥ 5 或 bookmarks ≥ 3 再 +10
  *
- * 最终返回一个数组：[{ userId, name, points, rank }, ...] 按 points 从高到低排序
+ * 返回：[{ userId, name, points, rank }, ...]，包含所有用户
  */
 router.get("/ranking/total", async (req, res) => {
   try {
+    // 1. 把所有帖子拿出来做计分
     const posts = await ForumPost.find()
       .populate("author", "name")
       .exec();
@@ -473,12 +474,27 @@ router.get("/ranking/total", async (req, res) => {
       addScore(authorId, authorName, base);
     });
 
-    // 转成数组并排序
-    const rankingArray = Array.from(scoreMap.values()).sort(
-      (a, b) => b.points - a.points
-    );
+    // 2. 把所有用户都补进去（没分的就是 0 分）
+    const allUsers = await User.find({}, "name").exec();
 
-    // 加 rank 字段
+    allUsers.forEach((u) => {
+      const key = u._id.toString();
+      if (!scoreMap.has(key)) {
+        scoreMap.set(key, {
+          userId: key,
+          name: u.name || "Anonymous",
+          points: 0,
+        });
+      }
+    });
+
+    // 3. 转成数组并排序（积分降序，同分时按名字排一下，避免顺序乱跳）
+    const rankingArray = Array.from(scoreMap.values()).sort((a, b) => {
+      if (b.points !== a.points) return b.points - a.points;
+      return (a.name || "").localeCompare(b.name || "");
+    });
+
+    // 4. 加 rank 字段
     rankingArray.forEach((item, idx) => {
       item.rank = idx + 1;
     });
@@ -489,5 +505,6 @@ router.get("/ranking/total", async (req, res) => {
     res.status(500).json({ error: "Failed to compute ranking" });
   }
 });
+
 
 export default router;
