@@ -100,9 +100,8 @@ function ChallengesPage() {
   }, []);
 
   const handleJoin = async (challenge) => {
-    const challengeId = challenge._id; // 只有真实数据才有 _id
+    const challengeId = challenge._id; 
 
-    // 如果是示例 challenge，没有 _id，直接提示
     if (!challengeId) {
       alert("This is just a demo challenge. Real friend challenges will appear here once created in backend.");
       return;
@@ -180,7 +179,6 @@ function ChallengesPage() {
             let daysLeftText = "";
 
             if (isReal) {
-              // 真实的 friend challenge，目前还没有算法，就用 0% + 显示 time
               const totalDays = c.time || 7;
               progress = 0;
               daysLeftText = `Duration: ${totalDays} days`;

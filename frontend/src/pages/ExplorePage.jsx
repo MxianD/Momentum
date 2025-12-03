@@ -50,6 +50,15 @@ const recommended = [
       "Loosen up with a quick morning stretch to energize your body and mind.",
     image: meditationImg,
   },
+    {
+    _id: "6930af9b7f70d6bcc18ac6c9",
+    title: "Gym Workouts",
+    leader: "Challenge Leader",
+    time: "60 Min",
+    description:
+      "Build a healthier body",
+    image: meditationImg,
+  },
 ];
 
 function ExplorePage() {
