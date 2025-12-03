@@ -458,6 +458,8 @@ router.get("/ranking/total", async (req, res) => {
           base += 6;
         } else if (titleRaw.startsWith("morning stretch")) {
           base += 3;
+        } else if(titleRaw.startsWith("gym workouts")){
+          base += 8;
         } else {
           // 其它任意打卡挑战，兜底给一个基础分
           base += 3;

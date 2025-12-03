@@ -35,6 +35,7 @@ function getPointsForChallengeTitle(title) {
   if (title === "Everyday Meditation") return 6;
   if (title === "Stay Hydrated") return 5;
   if (title === "Morning Stretch") return 3;
+  if (title === "Gym Workouts") return 8;
   return 0;
 }
 
